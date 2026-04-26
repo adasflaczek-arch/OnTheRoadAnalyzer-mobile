@@ -288,15 +288,13 @@ function makeAfrRedlinePlugin() {
 // uPlot — three vertically stacked, X-linked plots
 // ============================================================
 let plotAfr = null, plotRpm = null, plotTps = null;
-let cursorSyncKey = 'otr-sync';
-const sync = uPlot.sync(cursorSyncKey);
+let isSyncing = false;
 
 function makePlot(targetEl, yRange, yFormatFn, extraPlugins = []) {
   const opts = {
     width:  targetEl.clientWidth,
     height: targetEl.clientHeight,
     cursor: {
-      sync: { key: cursorSyncKey, setSeries: false },
       drag: { x: true, y: false, uni: 30 },
       points: { show: true },
     },
@@ -325,7 +323,6 @@ function makePlot(targetEl, yRange, yFormatFn, extraPlugins = []) {
     series: [{ label: 't' }],
     plugins: [makeRangeBandPlugin(), ...extraPlugins],
     hooks: {
-      ready:     [ u => sync.sub(u) ],
       setCursor: [ u => onCursor(u) ],
       setSelect: [ u => onSelect(u) ],
     },
@@ -620,11 +617,29 @@ elBtnClearR.addEventListener('click', () => {
 });
 
 function onCursor(u) {
+  if (isSyncing) return;
   const left = u.cursor.left;
-  if (left != null && left >= 0) {
-    const val = u.posToVal(left, 'x');
-    if (Number.isFinite(val)) state.lastCursorX = val;
+  if (left == null || left < 0) return;
+  const val = u.posToVal(left, 'x');
+  if (!Number.isFinite(val)) return;
+  state.lastCursorX = val;
+
+  // Dispatch a synthetic mousemove on each other plot's overlay so the
+  // vertical cursor line actually renders (uPlot's built-in sync omits it).
+  isSyncing = true;
+  for (const other of [plotAfr, plotRpm, plotTps]) {
+    if (!other || other === u || !other.over) continue;
+    const ox = other.valToPos(val, 'x');
+    if (ox < 0) continue;
+    const rect = other.over.getBoundingClientRect();
+    other.over.dispatchEvent(new MouseEvent('mousemove', {
+      bubbles: false,
+      cancelable: false,
+      clientX: rect.left + ox,
+      clientY: rect.top + other.over.clientHeight / 2,
+    }));
   }
+  isSyncing = false;
 }
 
 function onSelect(u) {
