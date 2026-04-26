@@ -286,29 +286,25 @@ function makeAfrRedlinePlugin() {
 // ============================================================
 let plotAfr = null, plotRpm = null, plotTps = null;
 
-// Cursor sync plugin: draws a vertical line at state.lastCursorX on every plot.
-// Runs in the draw hook so it works on all plots without any mousemove trickery.
-function makeCursorSyncPlugin() {
-  return {
-    hooks: {
-      draw: [u => {
-        if (state.lastCursorX == null) return;
-        if (!u.data || !u.data[0] || !u.data[0].length) return;
-        const cx = u.valToPos(state.lastCursorX, 'x', true);
-        const { left, top, width, height } = u.bbox;
-        if (cx < left || cx > left + width) return;
-        const ctx = u.ctx;
-        ctx.save();
-        ctx.strokeStyle = 'rgba(200,200,200,0.35)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(cx, top);
-        ctx.lineTo(cx, top + height);
-        ctx.stroke();
-        ctx.restore();
-      }]
-    }
-  };
+// CSS cursor line — a single div spanning all three plots, repositioned on mousemove.
+const elCursorLine = $('cursorLine');
+const elPlots      = $('plots');
+
+function showCursorLine(u) {
+  if (!elCursorLine || !elPlots) return;
+  const canvas = u.root && u.root.querySelector('canvas');
+  if (!canvas) return;
+  const canvasRect = canvas.getBoundingClientRect();
+  const plotsRect  = elPlots.getBoundingClientRect();
+  const dpr        = window.devicePixelRatio || 1;
+  const axisWidth  = u.bbox.left / dpr;           // y-axis width in CSS px
+  const clientX    = canvasRect.left + axisWidth + u.cursor.left;
+  const relX       = clientX - plotsRect.left;
+  elCursorLine.style.left    = relX + 'px';
+  elCursorLine.style.display = 'block';
+}
+function hideCursorLine() {
+  if (elCursorLine) elCursorLine.style.display = 'none';
 }
 
 function makePlot(targetEl, yRange, yFormatFn, extraPlugins = []) {
@@ -342,7 +338,7 @@ function makePlot(targetEl, yRange, yFormatFn, extraPlugins = []) {
       },
     ],
     series: [{ label: 't' }],
-    plugins: [makeCursorSyncPlugin(), makeRangeBandPlugin(), ...extraPlugins],
+    plugins: [makeRangeBandPlugin(), ...extraPlugins],
     hooks: {
       setCursor: [ u => onCursor(u) ],
       setSelect: [ u => onSelect(u) ],
@@ -559,9 +555,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // Clear cursor line when mouse leaves the plots area
   document.getElementById('plots').addEventListener('mouseleave', () => {
     state.lastCursorX = null;
-    if (plotAfr) plotAfr.redraw(false);
-    if (plotRpm) plotRpm.redraw(false);
-    if (plotTps) plotTps.redraw(false);
+    hideCursorLine();
   });
 
   ['plotAfr', 'plotRpm', 'plotTps'].forEach(id => {
@@ -647,14 +641,11 @@ elBtnClearR.addEventListener('click', () => {
 
 function onCursor(u) {
   const left = u.cursor.left;
-  if (left == null || left < 0) return;
+  if (left == null || left < 0) { hideCursorLine(); return; }
   const val = u.posToVal(left, 'x');
   if (!Number.isFinite(val)) return;
   state.lastCursorX = val;
-  // Redraw the other plots so the cursor sync plugin draws the line there too
-  for (const other of [plotAfr, plotRpm, plotTps]) {
-    if (other && other !== u) other.redraw(false);
-  }
+  showCursorLine(u);
 }
 
 function onSelect(u) {

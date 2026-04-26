@@ -26,7 +26,7 @@
     <label for="fileInput" class="btn btn-primary" title="Import CSV log file(s)" style="cursor:pointer">
       <span class="btn-icon">+</span> IMPORT CSV
     </label>
-    <input type="file" id="fileInput" accept=".csv,text/csv,text/plain" multiple style="display:none">
+    <input type="file" id="fileInput" accept="*/*" multiple style="display:none">
 
     <div class="seg" role="group" aria-label="AFR or Lambda display">
       <button id="modeAfr" class="seg-btn active">AFR</button>
@@ -88,7 +88,8 @@
     </div>
   </aside>
 
-  <section class="plots" id="plots">
+  <section class="plots" id="plots" style="position:relative">
+    <div id="cursorLine" style="position:absolute;top:0;bottom:0;width:1px;background:rgba(200,200,200,0.3);pointer-events:none;z-index:3;display:none"></div>
     <div class="plot-card">
       <div class="plot-label" id="afrLabel">AFR</div>
       <div id="plotAfr" class="plot"></div>
@@ -111,9 +112,4 @@
   <button id="btnRangeCancel" class="range-banner-cancel">×</button>
 </div>
 
-<!-- Per-session calibration modal -->
-<div id="calModal" class="modal hidden">
-  <div class="modal-card">
-    <div class="modal-head">
-      <span>TPS CALIBRATION</span>
-      <b
+<!-- Per-sessio
