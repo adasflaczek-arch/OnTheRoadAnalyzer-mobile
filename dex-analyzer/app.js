@@ -56,7 +56,6 @@ function loadSettings() {
 // ----- DOM refs -----
 const $ = (id) => document.getElementById(id);
 const elFileInput     = $('fileInput');
-const elBtnImport     = $('btnImport');
 const elBtnAfr        = $('modeAfr');
 const elBtnLambda     = $('modeLambda');
 const elBtnRange      = $('btnRangeSelect');
@@ -114,10 +113,8 @@ elBtnSettings.addEventListener('click', () => {
 });
 
 // ============================================================
-// CSV IMPORT
+// CSV IMPORT  (label for="fileInput" handles the click natively)
 // ============================================================
-elBtnImport.addEventListener('click', () => elFileInput.click());
-
 elFileInput.addEventListener('change', async (e) => {
   const files = Array.from(e.target.files);
   if (!files.length) return;
@@ -288,7 +285,31 @@ function makeAfrRedlinePlugin() {
 // uPlot — three vertically stacked, X-linked plots
 // ============================================================
 let plotAfr = null, plotRpm = null, plotTps = null;
-let isSyncing = false;
+
+// Cursor sync plugin: draws a vertical line at state.lastCursorX on every plot.
+// Runs in the draw hook so it works on all plots without any mousemove trickery.
+function makeCursorSyncPlugin() {
+  return {
+    hooks: {
+      draw: [u => {
+        if (state.lastCursorX == null) return;
+        if (!u.data || !u.data[0] || !u.data[0].length) return;
+        const cx = u.valToPos(state.lastCursorX, 'x', true);
+        const { left, top, width, height } = u.bbox;
+        if (cx < left || cx > left + width) return;
+        const ctx = u.ctx;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(200,200,200,0.35)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx, top);
+        ctx.lineTo(cx, top + height);
+        ctx.stroke();
+        ctx.restore();
+      }]
+    }
+  };
+}
 
 function makePlot(targetEl, yRange, yFormatFn, extraPlugins = []) {
   const opts = {
@@ -321,7 +342,7 @@ function makePlot(targetEl, yRange, yFormatFn, extraPlugins = []) {
       },
     ],
     series: [{ label: 't' }],
-    plugins: [makeRangeBandPlugin(), ...extraPlugins],
+    plugins: [makeCursorSyncPlugin(), makeRangeBandPlugin(), ...extraPlugins],
     hooks: {
       setCursor: [ u => onCursor(u) ],
       setSelect: [ u => onSelect(u) ],
@@ -535,6 +556,14 @@ elSessionList.addEventListener('click', (e) => {
 // ALIGN TO CURSOR — click on a plot to pin that time to t=0
 // ============================================================
 window.addEventListener('DOMContentLoaded', () => {
+  // Clear cursor line when mouse leaves the plots area
+  document.getElementById('plots').addEventListener('mouseleave', () => {
+    state.lastCursorX = null;
+    if (plotAfr) plotAfr.redraw(false);
+    if (plotRpm) plotRpm.redraw(false);
+    if (plotTps) plotTps.redraw(false);
+  });
+
   ['plotAfr', 'plotRpm', 'plotTps'].forEach(id => {
     document.getElementById(id).addEventListener('click', () => {
       if (state.alignSession === null || state.lastCursorX === null) return;
@@ -617,29 +646,15 @@ elBtnClearR.addEventListener('click', () => {
 });
 
 function onCursor(u) {
-  if (isSyncing) return;
   const left = u.cursor.left;
   if (left == null || left < 0) return;
   const val = u.posToVal(left, 'x');
   if (!Number.isFinite(val)) return;
   state.lastCursorX = val;
-
-  // Dispatch a synthetic mousemove on each other plot's overlay so the
-  // vertical cursor line actually renders (uPlot's built-in sync omits it).
-  isSyncing = true;
+  // Redraw the other plots so the cursor sync plugin draws the line there too
   for (const other of [plotAfr, plotRpm, plotTps]) {
-    if (!other || other === u || !other.over) continue;
-    const ox = other.valToPos(val, 'x');
-    if (ox < 0) continue;
-    const rect = other.over.getBoundingClientRect();
-    other.over.dispatchEvent(new MouseEvent('mousemove', {
-      bubbles: false,
-      cancelable: false,
-      clientX: rect.left + ox,
-      clientY: rect.top + other.over.clientHeight / 2,
-    }));
+    if (other && other !== u) other.redraw(false);
   }
-  isSyncing = false;
 }
 
 function onSelect(u) {
@@ -665,19 +680,4 @@ function drawRangeMarkers() {
 
 // ============================================================
 // TRANSFER WINDOWS — RPM→λ and TPS→λ binning
-// ============================================================
-const elTransferWindows = $('transferWindows');
-
-function openTransferWindows() {
-  if (!state.range) return;
-  elTransferWindows.innerHTML = '';
-  const { t1, t2 } = state.range;
-  const visible = state.sessions.filter(s => s.visible);
-  if (!visible.length) return;
-  makeTransferWindow('TPS → λ', 'tps', t1, t2, visible,  60, 100);
-  makeTransferWindow('RPM → λ', 'rpm', t1, t2, visible, 600, 140);
-}
-
-function makeTransferWindow(title, axis, t1, t2, sessions, leftPx, topPx) {
-  const win = document.createElement('div');
-  win.className = 'transfer
+// ==============================================

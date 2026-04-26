@@ -23,10 +23,10 @@
   </div>
 
   <div class="toolbar">
-    <button id="btnImport" class="btn btn-primary" title="Import CSV log file(s)">
+    <label for="fileInput" class="btn btn-primary" title="Import CSV log file(s)" style="cursor:pointer">
       <span class="btn-icon">+</span> IMPORT CSV
-    </button>
-    <input type="file" id="fileInput" accept=".csv,text/csv,text/plain" multiple style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden">
+    </label>
+    <input type="file" id="fileInput" accept=".csv,text/csv,text/plain" multiple style="display:none">
 
     <div class="seg" role="group" aria-label="AFR or Lambda display">
       <button id="modeAfr" class="seg-btn active">AFR</button>
