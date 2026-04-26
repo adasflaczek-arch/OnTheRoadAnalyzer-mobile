@@ -358,8 +358,6 @@ function makeAfrRedlinePlugin() {
 // ============================================================
 let plotAfr = null, plotRpm = null, plotTps = null;
 
-// uPlot cursor sync — shared string key so all three plots show a vertical line together.
-const PLOT_SYNC_KEY = 'otr-sync';
 
 // CSS cursor line — a single div spanning all three plots, repositioned on mousemove.
 const elCursorLine = $('cursorLine');
@@ -389,7 +387,6 @@ function makePlot(targetEl, yRange, yFormatFn, extraPlugins = []) {
     cursor: {
       drag: { x: true, y: false, uni: 30 },
       points: { show: true },
-      sync: { key: PLOT_SYNC_KEY, setSeries: false },
     },
     scales: {
       x: { time: false },
@@ -672,4 +669,10 @@ let calSessionId = null;
 function openCalModal(s) {
   calSessionId = s.id;
   elCalName.textContent = s.name;
-  elCalClose
+  elCalClosed.value = s.tpsCal.closed;
+  elCalWot.value    = s.tpsCal.wot;
+  elCalOffset.value = s.offset;
+  elCalModal.classList.remove('hidden');
+}
+function closeCalModal() {
+  elCalModal.cla
