@@ -55,6 +55,7 @@ function loadSettings() {
 
 // ----- DOM refs -----
 const $ = (id) => document.getElementById(id);
+const elBtnImport     = $('btnImport');
 const elFileInput     = $('fileInput');
 const elBtnAfr        = $('modeAfr');
 const elBtnLambda     = $('modeLambda');
@@ -113,10 +114,12 @@ elBtnSettings.addEventListener('click', () => {
 });
 
 // ============================================================
-// CSV IMPORT  (label for="fileInput" handles the click natively)
+// CSV IMPORT
+// Uses showOpenFilePicker (File System Access API) where available —
+// opens the real file manager, not the media picker.
+// Falls back to <input type="file"> for browsers that lack it.
 // ============================================================
-elFileInput.addEventListener('change', async (e) => {
-  const files = Array.from(e.target.files);
+async function importFiles(files) {
   if (!files.length) return;
   setStatus(`LOADING ${files.length}…`);
   for (const file of files) {
@@ -126,9 +129,33 @@ elFileInput.addEventListener('change', async (e) => {
       setStatus(`ERR: ${file.name}`, 'error');
     }
   }
-  elFileInput.value = '';
   rebuildAll();
   setStatus('READY');
+}
+
+elBtnImport.addEventListener('click', async () => {
+  if ('showOpenFilePicker' in window) {
+    try {
+      const handles = await window.showOpenFilePicker({
+        multiple: true,
+        excludeAcceptAllOption: false,
+        types: [{ description: 'CSV log files', accept: { 'text/csv': ['.csv'], 'text/plain': ['.csv'] } }],
+      });
+      await importFiles(await Promise.all(handles.map(h => h.getFile())));
+      return;
+    } catch(e) {
+      if (e.name === 'AbortError') return; // user cancelled — do nothing
+      // any other error: fall through to the legacy input
+    }
+  }
+  elFileInput.click();
+});
+
+// Legacy fallback change handler
+elFileInput.addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files);
+  elFileInput.value = '';
+  await importFiles(files);
 });
 
 function loadCsvFile(file) {
@@ -653,29 +680,3 @@ function onSelect(u) {
   const i0 = u.posToIdx(u.select.left);
   const i1 = u.posToIdx(u.select.left + u.select.width);
   const xs = u.data[0];
-  if (!xs || !xs.length) return;
-  const t1 = xs[Math.max(0, Math.min(xs.length-1, i0))];
-  const t2 = xs[Math.max(0, Math.min(xs.length-1, i1))];
-  state.range = { t1: Math.min(t1,t2), t2: Math.max(t1,t2) };
-  cancelRangeSelect();
-  drawRangeMarkers();
-  openTransferWindows();
-}
-
-// Trigger a redraw on all plots so range band + redlines repaint
-function drawRangeMarkers() {
-  if (plotAfr) plotAfr.redraw(false);
-  if (plotRpm) plotRpm.redraw(false);
-  if (plotTps) plotTps.redraw(false);
-}
-
-// ============================================================
-// TRANSFER WINDOWS — RPM→λ and TPS→λ binning
-// ============================================================
-const elTransferWindows = $('transferWindows');
-
-function openTransferWindows() {
-  if (!state.range) return;
-  elTransferWindows.innerHTML = '';
-  const { t1, t2 } = state.range;
-  const visible = state.sessions.filter(s
