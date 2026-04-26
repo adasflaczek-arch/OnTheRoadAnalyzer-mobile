@@ -120,33 +120,46 @@ elBtnSettings.addEventListener('click', () => {
 // Falls back to <input type="file"> for browsers that lack it.
 // ============================================================
 async function importFiles(files) {
-  if (!files.length) return;
+  if (!files.length) { setStatus('NO FILES', 'warn'); return; }
   setStatus(`LOADING ${files.length}…`);
+  let loaded = 0;
   for (const file of files) {
-    try { await loadCsvFile(file); }
-    catch (err) {
+    try {
+      await loadCsvFile(file);
+      loaded++;
+    } catch (err) {
       console.error(err);
-      setStatus(`ERR: ${file.name}`, 'error');
+      setStatus(`ERR: ${err.message || file.name}`, 'error');
+      return; // stop and keep the error visible
     }
   }
   rebuildAll();
-  setStatus('READY');
+  setStatus(loaded ? `READY` : 'NO DATA', loaded ? 'ok' : 'warn');
 }
 
 elBtnImport.addEventListener('click', async () => {
   if ('showOpenFilePicker' in window) {
+    let handles;
     try {
-      const handles = await window.showOpenFilePicker({
+      handles = await window.showOpenFilePicker({
         multiple: true,
         excludeAcceptAllOption: false,
         types: [{ description: 'CSV log files', accept: { 'text/csv': ['.csv'], 'text/plain': ['.csv'] } }],
       });
-      await importFiles(await Promise.all(handles.map(h => h.getFile())));
-      return;
     } catch(e) {
-      if (e.name === 'AbortError') return; // user cancelled — do nothing
-      // any other error: fall through to the legacy input
+      if (e.name === 'AbortError') return; // user cancelled
+      setStatus(`PICKER ERR: ${e.message}`, 'error');
+      return;
     }
+    let files;
+    try {
+      files = await Promise.all(handles.map(h => h.getFile()));
+    } catch(e) {
+      setStatus(`FILE READ ERR: ${e.message}`, 'error');
+      return;
+    }
+    await importFiles(files);
+    return;
   }
   elFileInput.click();
 });
@@ -668,15 +681,4 @@ elBtnClearR.addEventListener('click', () => {
 
 function onCursor(u) {
   const left = u.cursor.left;
-  if (left == null || left < 0) { hideCursorLine(); return; }
-  const val = u.posToVal(left, 'x');
-  if (!Number.isFinite(val)) return;
-  state.lastCursorX = val;
-  showCursorLine(u);
-}
-
-function onSelect(u) {
-  if (!u.select || u.select.width <= 2) return;
-  const i0 = u.posToIdx(u.select.left);
-  const i1 = u.posToIdx(u.select.left + u.select.width);
-  const xs = u.data[0];
+  if (left == null || left < 0) { hideCursorLine(); re
