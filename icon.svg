@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a1a1a"/>
+      <stop offset="1" stop-color="#0a0a0a"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff5533"/>
+      <stop offset="0.5" stop-color="#ff7a00"/>
+      <stop offset="1" stop-color="#4dc4ff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+
+  <!-- Outer ring accent -->
+  <rect x="24" y="24" width="464" height="464" rx="80" fill="none" stroke="#ff7a00" stroke-width="3" opacity="0.4"/>
+
+  <!-- Subtle grid -->
+  <g stroke="#2a2a2a" stroke-width="1" opacity="0.6">
+    <line x1="80"  y1="180" x2="432" y2="180"/>
+    <line x1="80"  y1="256" x2="432" y2="256"/>
+    <line x1="80"  y1="332" x2="432" y2="332"/>
+    <line x1="160" y1="120" x2="160" y2="392"/>
+    <line x1="256" y1="120" x2="256" y2="392"/>
+    <line x1="352" y1="120" x2="352" y2="392"/>
+  </g>
+
+  <!-- Stoich line (AFR 14.7) -->
+  <line x1="80" y1="256" x2="432" y2="256" stroke="#4ade80" stroke-width="2" stroke-dasharray="6,6" opacity="0.5"/>
+
+  <!-- AFR waveform -->
+  <path d="M 80 280
+           C 120 260, 140 220, 180 230
+           S 220 290, 256 270
+           S 300 200, 340 240
+           S 380 310, 432 260"
+        fill="none"
+        stroke="url(#wave)"
+        stroke-width="10"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+
+  <!-- Brand label -->
+  <text x="256" y="438" font-family="Impact, sans-serif" font-size="44" font-weight="900"
+        fill="#ff7a00" text-anchor="middle" letter-spacing="6">OTR</text>
+
+  <!-- Top-left mark -->
+  <circle cx="78" cy="78" r="10" fill="#ff7a00"/>
+</svg>

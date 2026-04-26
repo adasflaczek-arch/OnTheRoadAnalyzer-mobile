@@ -1,0 +1,636 @@
+/* ============================================================
+   On The Road Analyzer — DeX edition
+   AEM-inspired industrial dashboard, optimised for DeX desktop
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Barlow+Condensed:wght@500;700;800;900&display=swap');
+
+:root {
+  --bg:           #0a0a0a;
+  --bg-elev-1:    #121212;
+  --bg-elev-2:    #181818;
+  --bg-elev-3:    #1f1f1f;
+  --line:         #2a2a2a;
+  --line-strong:  #3a3a3a;
+
+  --text:         #e8e8e8;
+  --text-mute:    #888;
+  --text-dim:     #555;
+
+  --accent:       #ff7a00;        /* AEM orange */
+  --accent-glow:  #ff7a0044;
+  --accent-soft:  #ff7a0022;
+  --warn:         #ffb800;
+  --bad:          #ff3344;
+  --good:         #4ade80;
+  --rich:         #ff5533;
+  --lean:         #4dc4ff;
+  --stoich:       #4ade80;
+
+  --font-display: 'Barlow Condensed', 'Impact', sans-serif;
+  --font-mono:    'JetBrains Mono', 'Consolas', monospace;
+
+  --radius: 4px;
+  --shadow-card: 0 1px 0 #ffffff08, 0 8px 24px #00000080;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* subtle scanline + grain backdrop */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 2px, #ffffff03 2px 3px),
+    radial-gradient(ellipse at top, #ff7a0008, transparent 60%);
+  z-index: 1;
+}
+
+button { font-family: inherit; }
+input  { font-family: inherit; }
+
+/* ============================================================
+   TOP BAR
+   ============================================================ */
+.topbar {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 24px;
+  padding: 10px 18px;
+  background: linear-gradient(180deg, #1a1a1a 0%, #0e0e0e 100%);
+  border-bottom: 1px solid var(--line-strong);
+  box-shadow: 0 2px 0 #000;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: 18px;
+  border-right: 1px solid var(--line);
+}
+.logo-mark {
+  font-size: 22px;
+  color: var(--accent);
+  text-shadow: 0 0 12px var(--accent-glow);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+.brand-text { line-height: 1; }
+.brand-title {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: 1.5px;
+  color: var(--text);
+}
+.brand-sub {
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: var(--accent);
+  margin-top: 3px;
+  font-weight: 700;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn {
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  cursor: pointer;
+  transition: all 120ms ease;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.btn:hover {
+  background: var(--bg-elev-3);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn:active { transform: translateY(1px); }
+
+.btn-primary {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+.btn-primary:hover {
+  background: #ff8a1a;
+  color: #000;
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+.btn-ghost {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--text-mute);
+}
+.btn-danger:hover {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+.btn-icon {
+  display: inline-block;
+  margin-right: 4px;
+  font-weight: 800;
+}
+
+/* segmented AFR / λ control */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-elev-1);
+}
+.seg-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-mute);
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+.seg-btn.active {
+  background: var(--accent);
+  color: #000;
+}
+.seg-btn:not(.active):hover {
+  color: var(--text);
+  background: var(--bg-elev-3);
+}
+
+.status {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--accent);
+  padding: 5px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-elev-1);
+  font-weight: 700;
+  min-width: 80px;
+  text-align: center;
+}
+.status.warn  { color: var(--warn); border-color: var(--warn); }
+.status.error { color: var(--bad);  border-color: var(--bad);  }
+
+/* ============================================================
+   LAYOUT
+   ============================================================ */
+.layout {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  height: calc(100vh - 56px);
+}
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+.sidebar {
+  background: var(--bg-elev-1);
+  border-right: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-elev-2);
+}
+.sidebar-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 2.5px;
+  color: var(--text);
+}
+.session-count {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 2px 9px;
+  min-width: 22px;
+  text-align: center;
+}
+
+.session-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.session-list::-webkit-scrollbar { width: 8px; }
+.session-list::-webkit-scrollbar-track { background: var(--bg-elev-1); }
+.session-list::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 4px;
+}
+.session-list::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+.session {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  padding: 10px;
+  margin-bottom: 8px;
+  transition: all 120ms ease;
+}
+.session.hidden-row {
+  opacity: 0.4;
+  border-left-color: var(--line-strong) !important;
+}
+.session-row1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.session-name {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-vis {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--text-mute);
+  width: 22px; height: 22px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 100ms;
+}
+.session-vis:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.session-vis.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.session-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.session-actions {
+  display: flex;
+  gap: 4px;
+}
+.session-actions button {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text-mute);
+  padding: 4px 6px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  font-weight: 700;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  transition: all 100ms;
+}
+.session-actions button:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.session-actions .btn-remove:hover {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--text-dim);
+}
+.empty-glyph {
+  font-size: 36px;
+  color: var(--line-strong);
+  margin-bottom: 12px;
+}
+.empty-text {
+  font-size: 11px;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+  color: var(--text-mute);
+}
+.empty-hint {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* ============================================================
+   PLOTS
+   ============================================================ */
+.plots {
+  padding: 10px;
+  display: grid;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap: 8px;
+  overflow: hidden;
+}
+.plot-card {
+  background: var(--bg-elev-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.plot-label {
+  position: absolute;
+  top: 8px; left: 12px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: var(--accent);
+  z-index: 5;
+  pointer-events: none;
+  text-shadow: 0 0 8px var(--accent-glow);
+}
+.plot {
+  flex: 1;
+  min-height: 0;
+}
+
+/* uPlot overrides */
+.uplot { font-family: var(--font-mono); }
+.u-legend { display: none !important; }
+.u-axis { color: var(--text-mute); }
+
+/* ============================================================
+   RANGE SELECT BANNER
+   ============================================================ */
+.range-banner {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-elev-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 4px 24px #000c, 0 0 24px var(--accent-glow);
+  z-index: 100;
+  font-size: 11px;
+  letter-spacing: 1px;
+  font-weight: 700;
+}
+.range-banner.hidden { display: none; }
+.range-banner-icon {
+  color: var(--accent);
+  font-size: 14px;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.range-banner-cancel {
+  background: transparent;
+  border: none;
+  color: var(--text-mute);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.range-banner-cancel:hover { color: var(--bad); }
+
+/* ============================================================
+   CALIBRATION MODAL
+   ============================================================ */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: #000a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  backdrop-filter: blur(4px);
+}
+.modal.hidden { display: none; }
+.modal-card {
+  background: var(--bg-elev-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  width: 380px;
+  box-shadow: var(--shadow-card);
+}
+.modal-head {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-elev-2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--accent);
+}
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-mute);
+  font-size: 22px;
+  cursor: pointer;
+  line-height: 1;
+}
+.modal-close:hover { color: var(--bad); }
+.modal-body {
+  padding: 18px;
+}
+.cal-session-name {
+  font-size: 11px;
+  color: var(--text-mute);
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--line);
+}
+.cal-row {
+  display: grid;
+  grid-template-columns: 1fr 100px auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.cal-row label {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--text-mute);
+}
+.cal-row input {
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  width: 100%;
+}
+.cal-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.cal-row .unit {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+}
+.cal-hint {
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  background: var(--bg);
+  border-left: 2px solid var(--accent);
+  padding: 8px 10px;
+  margin: 14px 0;
+  line-height: 1.5;
+}
+.cal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+.cal-actions .btn { flex: 1; }
+
+/* ============================================================
+   TRANSFER PLOT WINDOWS (floating)
+   ============================================================ */
+.transfer-window {
+  position: fixed;
+  top: 100px;
+  background: var(--bg-elev-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  width: 520px;
+  height: 360px;
+  box-shadow: var(--shadow-card);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  resize: both;
+  overflow: hidden;
+  min-width: 320px;
+  min-height: 220px;
+}
+.transfer-head {
+  padding: 8px 12px;
+  background: var(--bg-elev-2);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: move;
+  user-select: none;
+}
+.transfer-title {
+  flex: 1;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: 2px;
+  font-size: 13px;
+  color: var(--accent);
+}
+.transfer-actions {
+  display: flex;
+  gap: 4px;
+}
+.transfer-actions button {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--text-mute);
+  padding: 3px 8px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  font-weight: 700;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+}
+.transfer-actions button:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.transfer-close {
+  background: transparent;
+  border: none;
+  color: var(--text-mute);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 6px;
+}
+.transfer-close:hover { color: var(--bad); }
+.transfer-body {
+  flex: 1;
+  position: relative;
+}
+
+/* ============================================================
+   RESPONSIVE — DeX tablet handling
+   ============================================================ */
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 220px 1fr; }
+  .brand-title { font-size: 18px; }
+}

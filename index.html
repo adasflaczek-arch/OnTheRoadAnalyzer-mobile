@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0a0a0a">
+<title>On The Road Analyzer</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo-mark">●</div>
+    <div class="brand-text">
+      <div class="brand-title">ON&nbsp;THE&nbsp;ROAD</div>
+      <div class="brand-sub">ANALYZER · DEX</div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <button id="btnImport" class="btn btn-primary" title="Import CSV log file(s)">
+      <span class="btn-icon">+</span> IMPORT CSV
+    </button>
+    <input type="file" id="fileInput" accept=".csv" multiple hidden>
+
+    <div class="seg" role="group" aria-label="AFR or Lambda display">
+      <button id="modeAfr" class="seg-btn active">AFR</button>
+      <button id="modeLambda" class="seg-btn">λ</button>
+    </div>
+
+    <button id="btnRangeSelect" class="btn" title="Click two points on the chart to define a range">RANGE SELECT</button>
+    <button id="btnClearRange" class="btn btn-ghost" title="Clear current range">CLEAR RANGE</button>
+    <button id="btnExportPng" class="btn btn-ghost" title="Export plots to PNG">PNG</button>
+    <button id="btnClearAll" class="btn btn-danger" title="Remove all loaded sessions">CLEAR ALL</button>
+  </div>
+
+  <div class="status" id="status">READY</div>
+</header>
+
+<main class="layout">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <span class="sidebar-title">SESSIONS</span>
+      <span class="session-count" id="sessionCount">0</span>
+    </div>
+    <div class="session-list" id="sessionList">
+      <div class="empty-state">
+        <div class="empty-glyph">⌀</div>
+        <div class="empty-text">No sessions loaded</div>
+        <div class="empty-hint">Import a CSV from your Tuner</div>
+      </div>
+    </div>
+  </aside>
+
+  <section class="plots" id="plots">
+    <div class="plot-card">
+      <div class="plot-label" id="afrLabel">AFR</div>
+      <div id="plotAfr" class="plot"></div>
+    </div>
+    <div class="plot-card">
+      <div class="plot-label">RPM</div>
+      <div id="plotRpm" class="plot"></div>
+    </div>
+    <div class="plot-card">
+      <div class="plot-label">TPS&nbsp;%</div>
+      <div id="plotTps" class="plot"></div>
+    </div>
+  </section>
+
+</main>
+
+<div id="rangeBanner" class="range-banner hidden">
+  <span class="range-banner-icon">◉</span>
+  <span id="rangeBannerText">Click first point on any plot…</span>
+  <button id="btnRangeCancel" class="range-banner-cancel">×</button>
+</div>
+
+<!-- Per-session calibration modal -->
+<div id="calModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <span>TPS CALIBRATION</span>
+      <button id="calClose" class="modal-close">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="cal-session-name" id="calSessionName">—</div>
+
+      <div class="cal-row">
+        <label>Closed (0%) angle</label>
+        <input type="number" id="calClosed" step="0.1" min="0" max="360">
+        <span class="unit">°</span>
+      </div>
+      <div class="cal-row">
+        <label>WOT (100%) angle</label>
+        <input type="number" id="calWot" step="0.1" min="0" max="360">
+        <span class="unit">°</span>
+      </div>
+
+      <div class="cal-hint">
+        Modular wraparound is automatic. Closed = 300, WOT = 40 (crossing 0/360) is valid.
+      </div>
+
+      <div class="cal-row">
+        <label>Time offset</label>
+        <input type="number" id="calOffset" step="0.1">
+        <span class="unit">s</span>
+      </div>
+
+      <div class="cal-actions">
+        <button id="calApply" class="btn btn-primary">APPLY</button>
+        <button id="calReset" class="btn btn-ghost">RESET</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Transfer-plot windows (RPM→λ, TPS→λ) appear here -->
+<div id="transferWindows"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
