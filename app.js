@@ -173,59 +173,85 @@ elFileInput.addEventListener('change', async (e) => {
 
 function loadCsvFile(file) {
   return new Promise((resolve, reject) => {
-    Papa.parse(file, {
-      header: true,
-      dynamicTyping: true,
-      skipEmptyLines: true,
-      complete: (res) => {
-        try {
-          const rows = res.data.filter(r =>
-            r.t_ms !== undefined && r.t_ms !== null && !Number.isNaN(+r.t_ms)
-          );
-          if (!rows.length) return reject(new Error('No valid rows'));
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('File read failed'));
+    reader.onload = (ev) => {
+      try {
+        const text  = ev.target.result;
+        const lines = text.split(/\r?\n/);
 
-          const t      = new Float64Array(rows.length);
-          const afr    = new Float64Array(rows.length);
-          const rpm    = new Float64Array(rows.length);
-          const tpsRaw = new Float64Array(rows.length);
-
-          for (let i=0; i<rows.length; i++) {
-            const r = rows[i];
-            t[i]      = (+r.t_ms) / 1000.0;
-            const a = +r.afr;
-            afr[i]    = (Number.isFinite(a) && a >= 8.5 && a <= 20.0) ? a : NaN;
-            rpm[i]    = Number.isFinite(+r.rpm)     ? +r.rpm     : NaN;
-            tpsRaw[i] = Number.isFinite(+r.tps_deg) ? +r.tps_deg : NaN;
+        // Extract embedded TPS calibration from comment lines (#tps_cal:zero=...,full=...,dir=...)
+        let tpsCalFromFile = null;
+        for (const line of lines) {
+          if (!line.startsWith('#')) continue;
+          const m = line.match(/zero=([\d.]+),full=([\d.]+),dir=(\w+)/);
+          if (m) {
+            tpsCalFromFile = {
+              closed: parseFloat(m[1]),
+              wot:    parseFloat(m[2]),
+              ccw:    m[3] === 'ccw',
+            };
           }
+        }
 
-          const id = state.nextId++;
-          const colorIdx = state.sessions.length % SESSION_COLORS.length;
+        // Strip comment lines then parse
+        const csvText = lines.filter(l => !l.startsWith('#')).join('\n');
 
-          const sess = {
-            id,
-            fileName: file.name,
-            name: file.name.replace(/\.csv$/i, ''),
-            color: SESSION_COLORS[colorIdx],
-            visible: true,
-            t, afr, rpm, tpsRaw,
-            tpsCal: { closed: 0, wot: 90 },
-            offset: 0,
-          };
+        Papa.parse(csvText, {
+          header: true,
+          dynamicTyping: true,
+          skipEmptyLines: true,
+          complete: (res) => {
+            try {
+              const rows = res.data.filter(r =>
+                r.t_ms !== undefined && r.t_ms !== null && !Number.isNaN(+r.t_ms)
+              );
+              if (!rows.length) return reject(new Error('No valid rows'));
 
-          // Restore saved calibration if available
-          const saved = loadSessionState(file.name);
-          if (saved) {
-            if (saved.tpsCal) sess.tpsCal = saved.tpsCal;
-            if (saved.offset !== undefined) sess.offset = saved.offset;
-            if (saved.color)  sess.color  = saved.color;
-          }
+              const t      = new Float64Array(rows.length);
+              const afr    = new Float64Array(rows.length);
+              const rpm    = new Float64Array(rows.length);
+              const tpsRaw = new Float64Array(rows.length);
 
-          state.sessions.push(sess);
-          resolve();
-        } catch(e) { reject(e); }
-      },
-      error: reject,
-    });
+              for (let i=0; i<rows.length; i++) {
+                const r = rows[i];
+                t[i]      = (+r.t_ms) / 1000.0;
+                const a = +r.afr;
+                afr[i]    = (Number.isFinite(a) && a >= 8.5 && a <= 20.0) ? a : NaN;
+                rpm[i]    = Number.isFinite(+r.rpm)     ? +r.rpm     : NaN;
+                tpsRaw[i] = Number.isFinite(+r.tps_deg) ? +r.tps_deg : NaN;
+              }
+
+              const id = state.nextId++;
+              const colorIdx = state.sessions.length % SESSION_COLORS.length;
+              const sess = {
+                id,
+                fileName: file.name,
+                name: file.name.replace(/\.csv$/i, ''),
+                color: SESSION_COLORS[colorIdx],
+                visible: true,
+                t, afr, rpm, tpsRaw,
+                tpsCal: tpsCalFromFile || { closed: 0, wot: 90, ccw: false },
+                offset: 0,
+              };
+
+              // Saved user calibration overrides the embedded one
+              const saved = loadSessionState(file.name);
+              if (saved) {
+                if (saved.tpsCal) sess.tpsCal = saved.tpsCal;
+                if (saved.offset !== undefined) sess.offset = saved.offset;
+                if (saved.color)  sess.color  = saved.color;
+              }
+
+              state.sessions.push(sess);
+              resolve();
+            } catch(e) { reject(e); }
+          },
+          error: reject,
+        });
+      } catch(e) { reject(e); }
+    };
+    reader.readAsText(file);
   });
 }
 
@@ -326,6 +352,9 @@ function makeAfrRedlinePlugin() {
 // ============================================================
 let plotAfr = null, plotRpm = null, plotTps = null;
 
+// uPlot cursor sync — shared key so all three plots show a vertical line together.
+const plotSync = uPlot.sync('otr-sync');
+
 // CSS cursor line — a single div spanning all three plots, repositioned on mousemove.
 const elCursorLine = $('cursorLine');
 const elPlots      = $('plots');
@@ -354,6 +383,7 @@ function makePlot(targetEl, yRange, yFormatFn, extraPlugins = []) {
     cursor: {
       drag: { x: true, y: false, uni: 30 },
       points: { show: true },
+      sync: { key: plotSync.key, setSeries: false },
     },
     scales: {
       x: { time: false },
@@ -466,7 +496,7 @@ function rebuildPlotData() {
       const a = s.afr[j], r = s.rpm[j], tpRaw = s.tpsRaw[j];
       afrSer[i] = Number.isFinite(a) ? (yIsLambda ? a / STOICH : a) : null;
       rpmSer[i] = Number.isFinite(r) ? r : null;
-      tpsSer[i] = Number.isFinite(tpRaw) ? calibrateTps(tpRaw, cal.closed, cal.wot) : null;
+      tpsSer[i] = Number.isFinite(tpRaw) ? calibrateTps(tpRaw, cal.closed, cal.wot, cal.ccw) : null;
     }
     afrData.push(afrSer); rpmData.push(rpmSer); tpsData.push(tpsSer);
     addSeriesToPlot(plotAfr, s);
@@ -494,7 +524,9 @@ function addSeriesToPlot(u, s) {
 // ============================================================
 // TPS calibration with modular wraparound
 // ============================================================
-function calibrateTps(raw, closed, wot) {
+function calibrateTps(raw, closed, wot, ccw = false) {
+  // For CCW sensors the rotation direction is reversed — flip closed/wot and invert result.
+  if (ccw) return 100 - calibrateTps(raw, wot, closed, false);
   const nraw = ((raw % 360) + 360) % 360;
   const nc   = ((closed % 360) + 360) % 360;
   const nw   = ((wot    % 360) + 360) % 360;
@@ -835,7 +867,7 @@ function computeTransferBins(s, axis, t1, t2) {
     if (axis === 'tps') {
       const tp = s.tpsRaw[i];
       if (!Number.isFinite(tp)) continue;
-      xv = calibrateTps(tp, cal.closed, cal.wot);
+      xv = calibrateTps(tp, cal.closed, cal.wot, cal.ccw);
     } else {
       const rp = s.rpm[i];
       if (!Number.isFinite(rp)) continue;
