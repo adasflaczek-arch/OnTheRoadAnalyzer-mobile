@@ -133,7 +133,13 @@ async function importFiles(files) {
       return; // stop and keep the error visible
     }
   }
-  rebuildAll();
+  try {
+    rebuildAll();
+  } catch(e) {
+    console.error('rebuildAll error:', e);
+    setStatus(`RENDER ERR: ${e.message}`, 'error');
+    return;
+  }
   setStatus(loaded ? `READY` : 'NO DATA', loaded ? 'ok' : 'warn');
 }
 
@@ -352,8 +358,8 @@ function makeAfrRedlinePlugin() {
 // ============================================================
 let plotAfr = null, plotRpm = null, plotTps = null;
 
-// uPlot cursor sync — shared key so all three plots show a vertical line together.
-const plotSync = uPlot.sync('otr-sync');
+// uPlot cursor sync — shared string key so all three plots show a vertical line together.
+const PLOT_SYNC_KEY = 'otr-sync';
 
 // CSS cursor line — a single div spanning all three plots, repositioned on mousemove.
 const elCursorLine = $('cursorLine');
@@ -383,7 +389,7 @@ function makePlot(targetEl, yRange, yFormatFn, extraPlugins = []) {
     cursor: {
       drag: { x: true, y: false, uni: 30 },
       points: { show: true },
-      sync: { key: plotSync.key, setSeries: false },
+      sync: { key: PLOT_SYNC_KEY, setSeries: false },
     },
     scales: {
       x: { time: false },
@@ -666,8 +672,4 @@ let calSessionId = null;
 function openCalModal(s) {
   calSessionId = s.id;
   elCalName.textContent = s.name;
-  elCalClosed.value = s.tpsCal.closed;
-  elCalWot.value    = s.tpsCal.wot;
-  elCalOffset.value = s.offset;
-  elCalModal.classList.remove('hidden');
-}
+  elCalClose
