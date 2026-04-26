@@ -628,6 +628,80 @@ input  { font-family: inherit; }
 }
 
 /* ============================================================
+   SETTINGS PANEL
+   ============================================================ */
+.settings-panel {
+  position: fixed;
+  top: 56px;
+  left: 0; right: 0;
+  z-index: 10;
+  background: var(--bg-elev-2);
+  border-bottom: 1px solid var(--line-strong);
+  padding: 10px 18px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  box-shadow: 0 4px 16px #000c;
+}
+.settings-panel.hidden { display: none; }
+.settings-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings-label {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: var(--text-mute);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.settings-input {
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  width: 72px;
+}
+.settings-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.settings-unit {
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+}
+.settings-sep {
+  width: 1px;
+  height: 28px;
+  background: var(--line-strong);
+  margin: 0 4px;
+}
+.btn-settings-active {
+  color: var(--accent) !important;
+  border-color: var(--accent) !important;
+}
+
+/* ============================================================
+   ALIGN MODE
+   ============================================================ */
+.session.aligning {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 1px var(--warn);
+}
+.session-actions button.align-active {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: rgba(255,184,0,0.08);
+}
+
+/* ============================================================
    RESPONSIVE — DeX tablet handling
    ============================================================ */
 @media (max-width: 900px) {

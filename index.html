@@ -38,10 +38,39 @@
     <button id="btnExportPng" class="btn btn-ghost" title="Export plots to PNG">PNG</button>
     <button id="btnClearAll" class="btn btn-danger" title="Remove all loaded sessions">CLEAR ALL</button>
     <a href="http://192.168.4.1/" target="_blank" rel="noopener" class="btn btn-ghost" title="Open tuner web interface (connect to OnTheRoadTuner WiFi first)">TUNER UI ↗</a>
+    <button id="btnSettings" class="btn btn-ghost" title="Bin tolerances &amp; redline thresholds">⚙</button>
   </div>
 
   <div class="status" id="status">READY</div>
 </header>
+
+<div id="settingsPanel" class="settings-panel hidden">
+  <div class="settings-group">
+    <label class="settings-label">TPS BIN ±</label>
+    <input type="number" id="setTpsTol" class="settings-input" step="0.1" min="0.1" value="0.5">
+    <span class="settings-unit">%</span>
+  </div>
+  <div class="settings-group">
+    <label class="settings-label">RPM BIN ±</label>
+    <input type="number" id="setRpmTol" class="settings-input" step="10" min="10" value="50">
+    <span class="settings-unit">rpm</span>
+  </div>
+  <div class="settings-group">
+    <label class="settings-label">MIN SAMPLES</label>
+    <input type="number" id="setMinSamples" class="settings-input" step="1" min="1" value="3">
+  </div>
+  <div class="settings-sep"></div>
+  <div class="settings-group">
+    <label class="settings-label">LEAN LINE</label>
+    <input type="number" id="setAfrLean" class="settings-input" step="0.1" value="15.5">
+    <span class="settings-unit">AFR</span>
+  </div>
+  <div class="settings-group">
+    <label class="settings-label">RICH LINE</label>
+    <input type="number" id="setAfrRich" class="settings-input" step="0.1" value="12.5">
+    <span class="settings-unit">AFR</span>
+  </div>
+</div>
 
 <main class="layout">
 

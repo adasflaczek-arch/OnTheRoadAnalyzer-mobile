@@ -38,10 +38,39 @@
     <button id="btnExportPng" class="btn btn-ghost" title="Export plots to PNG">PNG</button>
     <button id="btnClearAll" class="btn btn-danger" title="Remove all loaded sessions">CLEAR ALL</button>
     <a href="http://192.168.4.1/" target="_blank" rel="noopener" class="btn btn-ghost" title="Open tuner web interface (connect to OnTheRoadTuner WiFi first)">TUNER UI ↗</a>
+    <button id="btnSettings" class="btn btn-ghost" title="Bin tolerances &amp; redline thresholds">⚙</button>
   </div>
 
   <div class="status" id="status">READY</div>
 </header>
+
+<div id="settingsPanel" class="settings-panel hidden">
+  <div class="settings-group">
+    <label class="settings-label">TPS BIN ±</label>
+    <input type="number" id="setTpsTol" class="settings-input" step="0.1" min="0.1" value="0.5">
+    <span class="settings-unit">%</span>
+  </div>
+  <div class="settings-group">
+    <label class="settings-label">RPM BIN ±</label>
+    <input type="number" id="setRpmTol" class="settings-input" step="10" min="10" value="50">
+    <span class="settings-unit">rpm</span>
+  </div>
+  <div class="settings-group">
+    <label class="settings-label">MIN SAMPLES</label>
+    <input type="number" id="setMinSamples" class="settings-input" step="1" min="1" value="3">
+  </div>
+  <div class="settings-sep"></div>
+  <div class="settings-group">
+    <label class="settings-label">LEAN LINE</label>
+    <input type="number" id="setAfrLean" class="settings-input" step="0.1" value="15.5">
+    <span class="settings-unit">AFR</span>
+  </div>
+  <div class="settings-group">
+    <label class="settings-label">RICH LINE</label>
+    <input type="number" id="setAfrRich" class="settings-input" step="0.1" value="12.5">
+    <span class="settings-unit">AFR</span>
+  </div>
+</div>
 
 <main class="layout">
 
@@ -88,51 +117,4 @@
     <div class="modal-head">
       <span>TPS CALIBRATION</span>
       <button id="calClose" class="modal-close">×</button>
-    </div>
-    <div class="modal-body">
-      <div class="cal-session-name" id="calSessionName">—</div>
-
-      <div class="cal-row">
-        <label>Closed (0%) angle</label>
-        <input type="number" id="calClosed" step="0.1" min="0" max="360">
-        <span class="unit">°</span>
-      </div>
-      <div class="cal-row">
-        <label>WOT (100%) angle</label>
-        <input type="number" id="calWot" step="0.1" min="0" max="360">
-        <span class="unit">°</span>
-      </div>
-
-      <div class="cal-hint">
-        Modular wraparound is automatic. Closed = 300, WOT = 40 (crossing 0/360) is valid.
-      </div>
-
-      <div class="cal-row">
-        <label>Time offset</label>
-        <input type="number" id="calOffset" step="0.1">
-        <span class="unit">s</span>
-      </div>
-
-      <div class="cal-actions">
-        <button id="calApply" class="btn btn-primary">APPLY</button>
-        <button id="calReset" class="btn btn-ghost">RESET</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Transfer-plot windows (RPM→λ, TPS→λ) appear here -->
-<div id="transferWindows"></div>
-
-<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.iife.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="app.js"></script>
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(()=>{});
-  });
-}
-</script>
-</body>
-</html>
+    

@@ -628,9 +628,12 @@ input  { font-family: inherit; }
 }
 
 /* ============================================================
-   RESPONSIVE — DeX tablet handling
+   SETTINGS PANEL
    ============================================================ */
-@media (max-width: 900px) {
-  .layout { grid-template-columns: 220px 1fr; }
-  .brand-title { font-size: 18px; }
-}
+.settings-panel {
+  position: fixed;
+  top: 56px;
+  left: 0; right: 0;
+  z-index: 10;
+  background: var(--bg-elev-2);
+  border-bottom:
