@@ -3,7 +3,7 @@
 A browser-based PWA port of your PyQt6 desktop analyzer. Designed to install to
 your Samsung Tab A11+ home screen and run in DeX mode like a native app.
 
-## What it does (V0.1)
+## What it does (V0.2)
 
 - Multi-CSV import from your Tuner (`t_ms, afr, rpm, tps_deg`)
 - Three vertically stacked, X-linked plots (AFR, RPM, TPS%)
@@ -14,6 +14,8 @@ your Samsung Tab A11+ home screen and run in DeX mode like a native app.
   TPS→λ and RPM→λ transfer plot windows with binned averages
 - CSV + PNG export from the transfer windows
 - PNG export of the main 3-plot stack
+- **TUNER UI button** — one tap opens the ESP32 web interface at `192.168.4.1`
+  while connected to the tuner's AP (no manual URL typing)
 - Offline-capable PWA (works on the tablet without WiFi after first install)
 
 ## File list
@@ -27,6 +29,7 @@ sw.js            Service worker (offline cache)
 icon.svg         Vector icon
 icon-192.png     PWA icon
 icon-512.png     PWA icon
+dex-analyzer/    Standalone copy of the app (same files + icons)
 ```
 
 ## Hosting options
@@ -42,7 +45,6 @@ Pick whichever you prefer. The app is fully static — no backend needed.
 ### Option B — Local quick test
 
 ```
-cd dex-analyzer
 python3 -m http.server 8080
 ```
 
@@ -67,7 +69,8 @@ install. Stick with GitHub Pages for the proper PWA experience.
 ## Workflow
 
 1. After a session, connect tablet to `OnTheRoadTuner` AP
-2. In Chrome, go to `http://192.168.4.1/log/full.csv?clear=1`
+2. Tap **TUNER UI ↗** in the toolbar to open the ESP32 web interface,
+   or go directly to `http://192.168.4.1/log/full.csv?clear=1`
    (downloads + atomically wipes the ESP32 log)
 3. Reconnect tablet to your normal WiFi (or stay on the AP — the PWA is cached)
 4. Open OTR Analyzer → IMPORT CSV → pick the file
