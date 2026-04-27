@@ -1,6 +1,7 @@
 /* ============================================================
    On The Road Analyzer — DeX edition
    Vanilla JS + uPlot. State, plots, sessions, transfer windows.
+   Mobile: pinch-zoom, tap-to-align, drag-to-select-range.
    ============================================================ */
 
 // ----- Constants -----
@@ -219,13 +220,32 @@ function loadCsvFile(file) {
               const rpm    = new Float64Array(rows.length);
               const tpsRaw = new Float64Array(rows.length);
 
+              let tpsMin =  Infinity;
+              let tpsMax = -Infinity;
               for (let i=0; i<rows.length; i++) {
                 const r = rows[i];
                 t[i]      = (+r.t_ms) / 1000.0;
                 const a = +r.afr;
                 afr[i]    = (Number.isFinite(a) && a >= 8.5 && a <= 20.0) ? a : NaN;
                 rpm[i]    = Number.isFinite(+r.rpm)     ? +r.rpm     : NaN;
-                tpsRaw[i] = Number.isFinite(+r.tps_deg) ? +r.tps_deg : NaN;
+                const tp = +r.tps_deg;
+                tpsRaw[i] = Number.isFinite(tp) ? tp : NaN;
+                if (Number.isFinite(tp)) {
+                  if (tp < tpsMin) tpsMin = tp;
+                  if (tp > tpsMax) tpsMax = tp;
+                }
+              }
+
+              // Auto-derive sensible TPS calibration defaults from the actual
+              // raw range in this CSV (matches the standalone Python viewer).
+              // The user can override per-session via the CAL modal afterwards.
+              let defaultCal = { closed: 0, wot: 90, ccw: false };
+              if (Number.isFinite(tpsMin) && Number.isFinite(tpsMax) && tpsMax > tpsMin) {
+                defaultCal = {
+                  closed: Math.round(tpsMin * 10) / 10,
+                  wot:    Math.round(tpsMax * 10) / 10,
+                  ccw:    false,
+                };
               }
 
               const id = state.nextId++;
@@ -237,7 +257,9 @@ function loadCsvFile(file) {
                 color: SESSION_COLORS[colorIdx],
                 visible: true,
                 t, afr, rpm, tpsRaw,
-                tpsCal: tpsCalFromFile || { closed: 0, wot: 90, ccw: false },
+                tpsRawMin: Number.isFinite(tpsMin) ? tpsMin : 0,
+                tpsRawMax: Number.isFinite(tpsMax) ? tpsMax : 90,
+                tpsCal: tpsCalFromFile || defaultCal,
                 offset: 0,
               };
 
@@ -385,7 +407,9 @@ function makePlot(targetEl, yRange, yFormatFn, extraPlugins = []) {
     width:  targetEl.clientWidth,
     height: targetEl.clientHeight,
     cursor: {
-      drag: { x: true, y: false, uni: 30 },
+      // Drag selects an X range and emits setSelect, but does NOT auto-zoom
+      // (setScale: false). Pinch-to-zoom is handled by our own touch handler.
+      drag: { x: true, y: false, uni: 8, setScale: false },
     },
     scales: {
       x: { time: false },
@@ -438,6 +462,142 @@ function buildPlots() {
 
   window.removeEventListener('resize', resizePlots);
   window.addEventListener('resize', resizePlots);
+
+  attachPinchZoom();
+}
+
+// ============================================================
+// PINCH-TO-ZOOM (mobile) + double-tap to reset.
+// Two-finger gesture zooms/pans the X axis on all 3 plots in sync.
+// We never zoom the page — the viewport meta locks page zoom and
+// `touch-action: none` on .plot lets us own the gesture.
+// ============================================================
+function getAllPlots() {
+  return [plotAfr, plotRpm, plotTps].filter(Boolean);
+}
+
+function setSyncedXRange(min, max) {
+  for (const u of getAllPlots()) {
+    u.setScale('x', { min, max });
+  }
+}
+
+function getXDataExtent() {
+  for (const u of getAllPlots()) {
+    const xs = u.data && u.data[0];
+    if (xs && xs.length) return [xs[0], xs[xs.length - 1]];
+  }
+  return null;
+}
+
+function resetXZoom() {
+  const ext = getXDataExtent();
+  if (!ext) return;
+  setSyncedXRange(ext[0], ext[1]);
+}
+
+function attachPinchZoom() {
+  ['plotAfr', 'plotRpm', 'plotTps'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || el.__pinchAttached) return;
+    el.__pinchAttached = true;
+
+    let pinchStart = null;     // {dist, midClientX, x0, x1, axisLeftCss, plotWidthCss, plot}
+    let lastTapT   = 0;
+
+    function getPlotForEl(elx) {
+      if (elx === document.getElementById('plotAfr')) return plotAfr;
+      if (elx === document.getElementById('plotRpm')) return plotRpm;
+      if (elx === document.getElementById('plotTps')) return plotTps;
+      return null;
+    }
+
+    el.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        const t0 = e.touches[0], t1 = e.touches[1];
+        const dx = t0.clientX - t1.clientX;
+        const dy = t0.clientY - t1.clientY;
+        const dist = Math.hypot(dx, dy);
+        const midClientX = (t0.clientX + t1.clientX) / 2;
+
+        const u = getPlotForEl(el);
+        if (!u) return;
+        const xs = u.scales.x;
+        if (!xs || !Number.isFinite(xs.min) || !Number.isFinite(xs.max)) return;
+
+        const canvas = u.root && u.root.querySelector('canvas');
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const axisLeftCss = u.bbox.left / dpr;
+        const plotWidthCss = u.bbox.width / dpr;
+
+        pinchStart = {
+          dist,
+          midClientX,
+          x0: xs.min,
+          x1: xs.max,
+          rectLeft: rect.left,
+          axisLeftCss,
+          plotWidthCss,
+        };
+        e.preventDefault();
+      } else if (e.touches.length === 1) {
+        // double-tap detection (within 350ms, two fingers not used) → reset zoom
+        const now = Date.now();
+        if (now - lastTapT < 350) {
+          resetXZoom();
+          lastTapT = 0;
+        } else {
+          lastTapT = now;
+        }
+      }
+    }, { passive: false });
+
+    el.addEventListener('touchmove', (e) => {
+      if (!pinchStart || e.touches.length !== 2) return;
+      const t0 = e.touches[0], t1 = e.touches[1];
+      const dx = t0.clientX - t1.clientX;
+      const dy = t0.clientY - t1.clientY;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1) return;
+      const midClientX = (t0.clientX + t1.clientX) / 2;
+
+      const scale = pinchStart.dist / dist; // shrink = zoom in
+      const { x0, x1, rectLeft, axisLeftCss, plotWidthCss } = pinchStart;
+
+      // Anchor: the data X under the original midpoint stays under the new midpoint.
+      const fracOrig = Math.max(0, Math.min(1,
+        (pinchStart.midClientX - rectLeft - axisLeftCss) / plotWidthCss));
+      const fracNew  = Math.max(0, Math.min(1,
+        (midClientX - rectLeft - axisLeftCss) / plotWidthCss));
+      const xAnchor  = x0 + fracOrig * (x1 - x0);
+
+      const newSpan = (x1 - x0) * scale;
+      let newMin = xAnchor - fracNew * newSpan;
+      let newMax = newMin + newSpan;
+
+      // Clamp to data extent so we can't pan into infinity
+      const ext = getXDataExtent();
+      if (ext) {
+        const dataSpan = ext[1] - ext[0];
+        if (newSpan > dataSpan) {
+          newMin = ext[0]; newMax = ext[1];
+        } else {
+          if (newMin < ext[0]) { newMin = ext[0]; newMax = newMin + newSpan; }
+          if (newMax > ext[1]) { newMax = ext[1]; newMin = newMax - newSpan; }
+        }
+      }
+      setSyncedXRange(newMin, newMax);
+      e.preventDefault();
+    }, { passive: false });
+
+    const endPinch = (e) => {
+      if (e.touches && e.touches.length < 2) pinchStart = null;
+    };
+    el.addEventListener('touchend', endPinch);
+    el.addEventListener('touchcancel', endPinch);
+  });
 }
 
 function resizePlots() {
@@ -517,436 +677,4 @@ function addSeriesToPlot(u, s) {
   u.addSeries({
     label: s.name,
     stroke: s.color,
-    width: 1.5,
-    points: { show: false },
-    spanGaps: false,
-  });
-}
-
-// ============================================================
-// TPS calibration with modular wraparound
-// ============================================================
-function calibrateTps(raw, closed, wot, ccw = false) {
-  // For CCW sensors the rotation direction is reversed — flip closed/wot and invert result.
-  if (ccw) return 100 - calibrateTps(raw, wot, closed, false);
-  const nraw = ((raw % 360) + 360) % 360;
-  const nc   = ((closed % 360) + 360) % 360;
-  const nw   = ((wot    % 360) + 360) % 360;
-  let arc = (nw - nc + 360) % 360;
-  if (arc === 0) arc = 1;
-  let pos = (nraw - nc + 360) % 360;
-  if (pos > arc + (360 - arc) / 2) pos -= 360;
-  return (pos / arc) * 100;
-}
-
-// ============================================================
-// SIDEBAR
-// ============================================================
-function rebuildSidebar() {
-  elSessionCount.textContent = state.sessions.length;
-  if (!state.sessions.length) {
-    elSessionList.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-glyph">⌀</div>
-        <div class="empty-text">No sessions loaded</div>
-        <div class="empty-hint">Import a CSV from your Tuner</div>
-      </div>`;
-    return;
-  }
-
-  elSessionList.innerHTML = '';
-  for (const s of state.sessions) {
-    const dur = s.t[s.t.length-1] - s.t[0];
-    const isAligning = state.alignSession === s.id;
-    const div = document.createElement('div');
-    div.className = 'session'
-      + (s.visible  ? '' : ' hidden-row')
-      + (isAligning ? ' aligning' : '');
-    div.style.borderLeftColor = s.color;
-    div.innerHTML = `
-      <div class="session-row1">
-        <button class="session-vis ${s.visible ? 'on' : ''}" data-act="vis" data-id="${s.id}" title="Toggle visibility">
-          ${s.visible ? '●' : '○'}
-        </button>
-        <div class="session-name" title="${s.fileName}">${s.name}</div>
-      </div>
-      <div class="session-meta">
-        <span>${s.t.length} pts</span>
-        <span>${dur.toFixed(1)}s</span>
-        <span>off ${s.offset.toFixed(1)}s</span>
-      </div>
-      <div class="session-actions">
-        <button data-act="cal"   data-id="${s.id}">CAL</button>
-        <button data-act="color" data-id="${s.id}">COLOR</button>
-        <button data-act="align" data-id="${s.id}" class="${isAligning ? 'align-active' : ''}" title="Hover over a reference point, then click to pin it to t=0">ALIGN</button>
-        <button class="btn-remove" data-act="remove" data-id="${s.id}">DEL</button>
-      </div>
-    `;
-    elSessionList.appendChild(div);
-  }
-}
-
-elSessionList.addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-act]');
-  if (!btn) return;
-  const id = +btn.dataset.id;
-  const act = btn.dataset.act;
-  const s = state.sessions.find(x => x.id === id);
-  if (!s) return;
-
-  if (act === 'vis') {
-    s.visible = !s.visible;
-    rebuildAll();
-  } else if (act === 'remove') {
-    state.sessions = state.sessions.filter(x => x.id !== id);
-    if (state.alignSession === id) { state.alignSession = null; setStatus('READY'); }
-    rebuildAll();
-  } else if (act === 'color') {
-    const idx = SESSION_COLORS.indexOf(s.color);
-    s.color = SESSION_COLORS[(idx + 1) % SESSION_COLORS.length];
-    saveSessionState(s);
-    rebuildAll();
-  } else if (act === 'cal') {
-    openCalModal(s);
-  } else if (act === 'align') {
-    if (state.alignSession === s.id) {
-      // Cancel
-      state.alignSession = null;
-      setStatus('READY');
-      rebuildSidebar();
-    } else {
-      state.alignSession = s.id;
-      setStatus('ALIGN — hover to reference point, then click plot', 'warn');
-      rebuildSidebar();
-    }
-  }
-});
-
-// ============================================================
-// ALIGN TO CURSOR — click on a plot to pin that time to t=0
-// ============================================================
-window.addEventListener('DOMContentLoaded', () => {
-  // Clear cursor line when mouse leaves the plots area
-  document.getElementById('plots').addEventListener('mouseleave', () => {
-    state.lastCursorX = null;
-    hideCursorLine();
-  });
-
-  ['plotAfr', 'plotRpm', 'plotTps'].forEach(id => {
-    document.getElementById(id).addEventListener('click', () => {
-      if (state.alignSession === null || state.lastCursorX === null) return;
-      const s = state.sessions.find(x => x.id === state.alignSession);
-      if (!s) { state.alignSession = null; return; }
-      s.offset = s.offset - state.lastCursorX;
-      state.alignSession = null;
-      setStatus('READY');
-      saveSessionState(s);
-      rebuildAll();
-    });
-  });
-});
-
-// ============================================================
-// MODE TOGGLE
-// ============================================================
-elBtnAfr.addEventListener('click',    () => { state.mode = 'afr';    rebuildPlotData(); });
-elBtnLambda.addEventListener('click', () => { state.mode = 'lambda'; rebuildPlotData(); });
-
-// ============================================================
-// CALIBRATION MODAL
-// ============================================================
-const elCalModal  = $('calModal');
-const elCalClose  = $('calClose');
-const elCalName   = $('calSessionName');
-const elCalClosed = $('calClosed');
-const elCalWot    = $('calWot');
-const elCalOffset = $('calOffset');
-const elCalApply  = $('calApply');
-const elCalReset  = $('calReset');
-let calSessionId = null;
-
-function openCalModal(s) {
-  calSessionId = s.id;
-  elCalName.textContent = s.name;
-  elCalClosed.value = s.tpsCal.closed;
-  elCalWot.value    = s.tpsCal.wot;
-  elCalOffset.value = s.offset;
-  elCalModal.classList.remove('hidden');
-}
-function closeCalModal() {
-  elCalModal.classList.add('hidden');
-  calSessionId = null;
-}
-elCalClose.addEventListener('click', closeCalModal);
-elCalModal.addEventListener('click', (e) => { if (e.target === elCalModal) closeCalModal(); });
-
-elCalApply.addEventListener('click', () => {
-  const s = state.sessions.find(x => x.id === calSessionId);
-  if (!s) return;
-  s.tpsCal.closed = parseFloat(elCalClosed.value) || 0;
-  s.tpsCal.wot    = parseFloat(elCalWot.value)    || 90;
-  s.offset        = parseFloat(elCalOffset.value) || 0;
-  saveSessionState(s);
-  closeCalModal();
-  rebuildAll();
-});
-elCalReset.addEventListener('click', () => {
-  elCalClosed.value = 0; elCalWot.value = 90; elCalOffset.value = 0;
-});
-
-// ============================================================
-// RANGE SELECT
-// ============================================================
-elBtnRange.addEventListener('click', () => {
-  state.rangeSelect = { active: true, t1: null, t2: null };
-  elRangeBanner.classList.remove('hidden');
-  elRangeText.textContent = 'Drag on any plot to select a range…';
-});
-elBtnRangeCancel.addEventListener('click', cancelRangeSelect);
-function cancelRangeSelect() {
-  state.rangeSelect = { active: false, t1: null, t2: null };
-  elRangeBanner.classList.add('hidden');
-}
-elBtnClearR.addEventListener('click', () => {
-  state.range = null;
-  cancelRangeSelect();
-  rebuildPlotData();
-});
-
-function onCursor(u) {
-  const left = u.cursor.left;
-  if (left == null || left < 0) { hideCursorLine(); return; }
-  const val = u.posToVal(left, 'x');
-  if (!Number.isFinite(val)) return;
-  state.lastCursorX = val;
-  showCursorLine(u);
-}
-
-function onSelect(u) {
-  if (!u.select || u.select.width <= 2) return;
-  const i0 = u.posToIdx(u.select.left);
-  const i1 = u.posToIdx(u.select.left + u.select.width);
-  const xs = u.data[0];
-  if (!xs || !xs.length) return;
-  const t1 = xs[Math.max(0, Math.min(xs.length-1, i0))];
-  const t2 = xs[Math.max(0, Math.min(xs.length-1, i1))];
-  state.range = { t1: Math.min(t1,t2), t2: Math.max(t1,t2) };
-  cancelRangeSelect();
-  drawRangeMarkers();
-  openTransferWindows();
-}
-
-// Trigger a redraw on all plots so range band + redlines repaint
-function drawRangeMarkers() {
-  if (plotAfr) plotAfr.redraw(false);
-  if (plotRpm) plotRpm.redraw(false);
-  if (plotTps) plotTps.redraw(false);
-}
-
-// ============================================================
-// TRANSFER WINDOWS — RPM→λ and TPS→λ binning
-// ============================================================
-const elTransferWindows = $('transferWindows');
-
-function openTransferWindows() {
-  if (!state.range) return;
-  elTransferWindows.innerHTML = '';
-  const { t1, t2 } = state.range;
-  const visible = state.sessions.filter(s => s.visible);
-  if (!visible.length) return;
-  makeTransferWindow('TPS → λ', 'tps', t1, t2, visible,  60, 100);
-  makeTransferWindow('RPM → λ', 'rpm', t1, t2, visible, 600, 140);
-}
-
-function makeTransferWindow(title, axis, t1, t2, sessions, leftPx, topPx) {
-  const win = document.createElement('div');
-  win.className = 'transfer-window';
-  win.style.left = leftPx + 'px';
-  win.style.top  = topPx  + 'px';
-  win.innerHTML = `
-    <div class="transfer-head">
-      <span class="transfer-title">${title}</span>
-      <div class="transfer-actions">
-        <button class="btn-csv">CSV</button>
-        <button class="btn-png">PNG</button>
-      </div>
-      <button class="transfer-close">×</button>
-    </div>
-    <div class="transfer-body"></div>
-  `;
-  elTransferWindows.appendChild(win);
-
-  const head = win.querySelector('.transfer-head');
-  let drag = null;
-  head.addEventListener('mousedown', (e) => {
-    if (e.target.closest('button')) return;
-    drag = { x: e.clientX - win.offsetLeft, y: e.clientY - win.offsetTop };
-  });
-  window.addEventListener('mousemove', (e) => {
-    if (!drag) return;
-    win.style.left = (e.clientX - drag.x) + 'px';
-    win.style.top  = (e.clientY - drag.y) + 'px';
-  });
-  window.addEventListener('mouseup', () => drag = null);
-  win.querySelector('.transfer-close').addEventListener('click', () => win.remove());
-
-  const yIsLambda = state.mode === 'lambda';
-  const xMin = axis === 'tps' ? -5 : 0;
-  const xMax = axis === 'tps' ? 105 : 7000;
-  const xLabel = axis === 'tps' ? 'TPS %' : 'RPM';
-  const yLabel = yIsLambda ? 'λ' : 'AFR';
-
-  const body = win.querySelector('.transfer-body');
-  setTimeout(() => {
-    const data = [[]];
-    const series = [{ label: 'x' }];
-    const xUnion = new Set();
-
-    const sessionBins = sessions.map(s => {
-      const bins = computeTransferBins(s, axis, t1, t2);
-      bins.forEach(b => xUnion.add(b.x));
-      return { s, bins };
-    });
-
-    const xArr = Array.from(xUnion).sort((a,b) => a-b);
-    data[0] = xArr;
-    sessionBins.forEach(({ s, bins }) => {
-      const map = new Map(bins.map(b => [b.x, yIsLambda ? b.y / STOICH : b.y]));
-      data.push(xArr.map(x => map.has(x) ? map.get(x) : null));
-      series.push({ label: s.name, stroke: s.color, width: 1.5, points: { show: true, size: 4 }, spanGaps: false });
-    });
-
-    const yRange = yIsLambda ? [0.6, 1.3] : [10.0, 18.0];
-    const yFmt   = (v) => yIsLambda ? v.toFixed(3) : v.toFixed(1);
-
-    const u = new uPlot({
-      width: body.clientWidth,
-      height: body.clientHeight,
-      cursor: { drag: { x: false, y: false } },
-      scales: {
-        x: { range: () => [xMin, xMax] },
-        y: { range: () => yRange },
-      },
-      axes: [
-        { stroke:'#888', grid:{stroke:'#2a2a2a'}, font:'11px JetBrains Mono', label: xLabel },
-        { stroke:'#888', grid:{stroke:'#2a2a2a'}, font:'11px JetBrains Mono', size: 55,
-          values: (u, splits) => splits.map(yFmt), label: yLabel },
-      ],
-      series,
-    }, data, body);
-
-    new ResizeObserver(() => u.setSize({ width: body.clientWidth, height: body.clientHeight }))
-      .observe(body);
-
-    win.querySelector('.btn-csv').addEventListener('click', () => {
-      const headers = [xLabel, ...sessions.map(s => s.name)];
-      const rows = [headers.join(',')];
-      for (let i=0; i<xArr.length; i++) {
-        const row = [xArr[i]];
-        for (let k=1; k<data.length; k++) row.push(data[k][i] == null ? '' : data[k][i]);
-        rows.push(row.join(','));
-      }
-      downloadBlob(new Blob([rows.join('\n')], { type: 'text/csv' }),
-        `${title.replace(/[^a-z0-9]/gi,'_')}.csv`);
-    });
-    win.querySelector('.btn-png').addEventListener('click', () => {
-      const canvas = body.querySelector('canvas');
-      if (!canvas) return;
-      canvas.toBlob(blob => downloadBlob(blob, `${title.replace(/[^a-z0-9]/gi,'_')}.png`));
-    });
-  }, 50);
-}
-
-function computeTransferBins(s, axis, t1, t2) {
-  const xs = [], ys = [];
-  const off = s.offset, cal = s.tpsCal;
-  for (let i=0; i<s.t.length; i++) {
-    const ti = s.t[i] + off;
-    if (ti < t1 || ti > t2) continue;
-    const a = s.afr[i];
-    if (!Number.isFinite(a)) continue;
-    let xv;
-    if (axis === 'tps') {
-      const tp = s.tpsRaw[i];
-      if (!Number.isFinite(tp)) continue;
-      xv = calibrateTps(tp, cal.closed, cal.wot, cal.ccw);
-    } else {
-      const rp = s.rpm[i];
-      if (!Number.isFinite(rp)) continue;
-      xv = rp;
-    }
-    xs.push(xv); ys.push(a);
-  }
-
-  // Use current settings for tolerances
-  const tol = axis === 'tps' ? state.settings.tpsTol : state.settings.rpmTol;
-  const binSize = tol * 2;
-  const bins = new Map();
-  for (let i=0; i<xs.length; i++) {
-    const key = Math.round(xs[i] / binSize) * binSize;
-    if (!bins.has(key)) bins.set(key, { sumY: 0, n: 0, x: key });
-    const b = bins.get(key); b.sumY += ys[i]; b.n++;
-  }
-  const out = [];
-  for (const b of bins.values()) {
-    if (b.n < state.settings.minSamples) continue;
-    out.push({ x: b.x, y: b.sumY / b.n, n: b.n });
-  }
-  out.sort((a,b) => a.x - b.x);
-  return out;
-}
-
-// ============================================================
-// EXPORT PNG (main plots)
-// ============================================================
-elBtnPng.addEventListener('click', () => {
-  const cs = ['plotAfr','plotRpm','plotTps']
-    .map(id => document.querySelector(`#${id} canvas`))
-    .filter(Boolean);
-  if (!cs.length) return;
-  const w = Math.max(...cs.map(c=>c.width));
-  const h = cs.reduce((a,c) => a + c.height, 0);
-  const out = document.createElement('canvas');
-  out.width = w; out.height = h;
-  const ctx = out.getContext('2d');
-  ctx.fillStyle = '#0a0a0a';
-  ctx.fillRect(0, 0, w, h);
-  let y = 0;
-  for (const c of cs) { ctx.drawImage(c, 0, y); y += c.height; }
-  out.toBlob(b => downloadBlob(b, 'analyzer-plots.png'));
-});
-
-// ============================================================
-// CLEAR ALL
-// ============================================================
-elBtnClearAll.addEventListener('click', () => {
-  if (!state.sessions.length) return;
-  if (!confirm('Remove all sessions?')) return;
-  state.sessions = [];
-  state.range = null;
-  state.alignSession = null;
-  cancelRangeSelect();
-  setStatus('READY');
-  rebuildAll();
-});
-
-// ============================================================
-// HELPERS
-// ============================================================
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click();
-  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
-}
-
-// ============================================================
-// INIT
-// ============================================================
-window.addEventListener('DOMContentLoaded', () => {
-  loadSettings();
-  syncSettingsInputs();
-  buildPlots();
-  setStatus('READY');
-});
+    width: 1
