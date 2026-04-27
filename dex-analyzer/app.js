@@ -136,8 +136,8 @@ async function importFiles(files) {
   try {
     rebuildAll();
   } catch(e) {
-    console.error('rebuildAll error:', e);
-    setStatus(`RENDER ERR: ${e.message}`, 'error');
+    console.error('rebuildAll:', e);
+    setStatus(`ERR: ${e.message}`, 'error');
     return;
   }
   setStatus(loaded ? `READY` : 'NO DATA', loaded ? 'ok' : 'warn');
@@ -386,7 +386,6 @@ function makePlot(targetEl, yRange, yFormatFn, extraPlugins = []) {
     height: targetEl.clientHeight,
     cursor: {
       drag: { x: true, y: false, uni: 30 },
-      points: { show: true },
     },
     scales: {
       x: { time: false },
@@ -675,4 +674,5 @@ function openCalModal(s) {
   elCalModal.classList.remove('hidden');
 }
 function closeCalModal() {
-  elCalModal.cla
+  elCalModal.classList.add('hidden');
+  calSessionId = null
