@@ -1,5 +1,5 @@
 /* OTR Analyzer — minimal offline-capable service worker */
-const CACHE = 'otr-analyzer-v11';
+const CACHE = 'otr-analyzer-v12';
 const ASSETS = [
   './',
   './index.html',

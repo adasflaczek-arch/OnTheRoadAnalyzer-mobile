@@ -242,18 +242,9 @@ function loadCsvFile(file) {
                 }
               }
 
-              // Auto-derive sensible TPS calibration defaults from the actual
-              // raw range in this CSV (matches the standalone Python viewer).
-              // The user can override per-session via the CAL modal afterwards.
-              let defaultCal = { closed: 0, wot: 90, ccw: false };
-              if (Number.isFinite(tpsMin) && Number.isFinite(tpsMax) && tpsMax > tpsMin) {
-                defaultCal = {
-                  closed: Math.round(tpsMin * 10) / 10,
-                  wot:    Math.round(tpsMax * 10) / 10,
-                  ccw:    false,
-                };
-              }
-
+              // Default: NO calibration — TPS plot shows raw degrees.
+              // (Matches the standalone Python viewer: user must explicitly
+              // calibrate to switch the TPS axis to 0-100%.)
               const id = state.nextId++;
               const colorIdx = state.sessions.length % SESSION_COLORS.length;
               const sess = {
@@ -265,14 +256,27 @@ function loadCsvFile(file) {
                 t, afr, rpm, tpsRaw,
                 tpsRawMin: Number.isFinite(tpsMin) ? tpsMin : 0,
                 tpsRawMax: Number.isFinite(tpsMax) ? tpsMax : 90,
-                tpsCal: tpsCalFromFile || defaultCal,
+                tpsCal: tpsCalFromFile || null,    // null = uncalibrated
                 offset: 0,
               };
 
-              // Saved user calibration overrides the embedded one
+              // Restore saved calibration & offset from localStorage, but
+              // VALIDATE the cal still produces sensible % on this data —
+              // a bad cal from an older build (e.g. peak 115% or -50%) is
+              // discarded so the user falls back to raw degrees instead of
+              // a permanently-broken plot.
               const saved = loadSessionState(file.name);
               if (saved) {
-                if (saved.tpsCal) sess.tpsCal = saved.tpsCal;
+                if (saved.tpsCal && Number.isFinite(saved.tpsCal.closed) && Number.isFinite(saved.tpsCal.wot)) {
+                  const probe = Number.isFinite(tpsMax) ? tpsMax : 90;
+                  const pct = calibrateTps(probe, saved.tpsCal.closed, saved.tpsCal.wot, !!saved.tpsCal.ccw);
+                  if (Number.isFinite(pct) && pct >= -5 && pct <= 110) {
+                    sess.tpsCal = saved.tpsCal;
+                  } else {
+                    // Bad saved cal — wipe it so user starts clean in degrees mode.
+                    console.warn('Discarding stale tpsCal for', file.name, '— produces', pct.toFixed(1)+'%');
+                  }
+                }
                 if (saved.offset !== undefined) sess.offset = saved.offset;
                 if (saved.color)  sess.color  = saved.color;
               }
@@ -462,7 +466,16 @@ function buildPlots() {
 
   plotAfr = makePlot(afrEl, afrRange, afrFmt, [makeAfrRedlinePlugin()]);
   plotRpm = makePlot(rpmEl, [0, 7000],  v => v.toFixed(0));
-  plotTps = makePlot(tpsEl, [-5, 105],  v => v.toFixed(0)+'%');
+
+  // TPS axis: percentages if ANY visible session is calibrated, else raw degrees.
+  const anyCal = state.sessions.some(s => s.visible && s.tpsCal);
+  const tpsRange = anyCal ? [-5, 110] : null;        // null = let uPlot auto-fit
+  const tpsFmt   = anyCal ? (v => v.toFixed(0)+'%') : (v => v.toFixed(0)+'\u00b0');
+  plotTps = makePlot(tpsEl, tpsRange, tpsFmt);
+
+  // Update the TPS plot label
+  const tpsLabel = document.querySelector('.plot-card:nth-child(3) .plot-label');
+  if (tpsLabel) tpsLabel.textContent = anyCal ? 'TPS %' : 'TPS\u00b0';
 
   window.removeEventListener('resize', resizePlots);
   window.addEventListener('resize', resizePlots);
@@ -641,7 +654,9 @@ function rebuildPlotData() {
       const a = s.afr[j], r = s.rpm[j], tpRaw = s.tpsRaw[j];
       afrSer[i] = Number.isFinite(a) ? (yIsLambda ? a / STOICH : a) : null;
       rpmSer[i] = Number.isFinite(r) ? r : null;
-      tpsSer[i] = Number.isFinite(tpRaw) ? calibrateTps(tpRaw, cal.closed, cal.wot, cal.ccw) : null;
+      if (Number.isFinite(tpRaw)) {
+        tpsSer[i] = cal ? calibrateTps(tpRaw, cal.closed, cal.wot, cal.ccw) : tpRaw;
+      } else { tpsSer[i] = null; }
     }
     afrData.push(afrSer); rpmData.push(rpmSer); tpsData.push(tpsSer);
     addSeriesToPlot(plotAfr, s);
@@ -957,8 +972,12 @@ let calSessionId = null;
 function openCalModal(s) {
   calSessionId = s.id;
   elCalName.textContent = s.name;
-  elCalClosed.value = s.tpsCal.closed;
-  elCalWot.value    = s.tpsCal.wot;
+  // If session is calibrated, show its values; otherwise pre-populate with
+  // the data's actual raw min/max as a sensible starting point the user can tweak.
+  const closedSeed = s.tpsCal ? s.tpsCal.closed : (Math.round((s.tpsRawMin || 0) * 10) / 10);
+  const wotSeed    = s.tpsCal ? s.tpsCal.wot    : (Math.round((s.tpsRawMax || 90) * 10) / 10);
+  elCalClosed.value = closedSeed;
+  elCalWot.value    = wotSeed;
   elCalOffset.value = s.offset;
   elCalModal.classList.remove('hidden');
 }
@@ -1018,7 +1037,29 @@ elCalApply.addEventListener('click', () => {
   }
 });
 elCalReset.addEventListener('click', () => {
-  elCalClosed.value = 0; elCalWot.value = 90; elCalOffset.value = 0;
+  // Wipe calibration entirely — TPS goes back to raw degrees on the plot.
+  const s = state.sessions.find(x => x.id === calSessionId);
+  if (s) {
+    s.tpsCal = null;
+    s.offset = 0;
+    saveSessionState(s);
+  }
+  // Re-seed the visible inputs with the data's actual extent so user can
+  // tweak from there if they want to recalibrate immediately.
+  if (s) {
+    elCalClosed.value = Math.round((s.tpsRawMin || 0) * 10) / 10;
+    elCalWot.value    = Math.round((s.tpsRawMax || 90) * 10) / 10;
+  } else {
+    elCalClosed.value = 0; elCalWot.value = 90;
+  }
+  elCalOffset.value = 0;
+  closeCalModal();
+  try { if (plotAfr) plotAfr.destroy(); } catch (_e) {}
+  try { if (plotRpm) plotRpm.destroy(); } catch (_e) {}
+  try { if (plotTps) plotTps.destroy(); } catch (_e) {}
+  plotAfr = plotRpm = plotTps = null;
+  rebuildAll();
+  setStatus(`CAL CLEARED — ${s ? s.name : ''} now shows raw degrees`);
 });
 
 // ============================================================
@@ -1213,7 +1254,7 @@ function computeTransferBins(s, axis, t1, t2) {
     if (axis === 'tps') {
       const tp = s.tpsRaw[i];
       if (!Number.isFinite(tp)) continue;
-      xv = calibrateTps(tp, cal.closed, cal.wot, cal.ccw);
+      xv = cal ? calibrateTps(tp, cal.closed, cal.wot, cal.ccw) : tp;
     } else {
       const rp = s.rpm[i];
       if (!Number.isFinite(rp)) continue;
