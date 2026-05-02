@@ -1180,8 +1180,17 @@ function makeTransferWindow(title, axis, t1, t2, sessions, leftPx, topPx) {
       series.push({ label: s.name, stroke: s.color, width: 1.5, points: { show: true, size: 4 }, spanGaps: false });
     });
 
-    const yRange = yIsLambda ? [0.6, 1.3] : [10.0, 18.0];
     const yFmt   = (v) => yIsLambda ? v.toFixed(3) : v.toFixed(1);
+
+    // Y-axis auto-fits the actual binned data with a small symmetric pad,
+    // falling back to a sensible window if data is empty / non-finite.
+    const yAutoRange = (u, dataMin, dataMax) => {
+      if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax) || dataMin === dataMax) {
+        return yIsLambda ? [0.6, 1.3] : [10.0, 18.0];
+      }
+      const pad = Math.max((dataMax - dataMin) * 0.1, yIsLambda ? 0.02 : 0.2);
+      return [dataMin - pad, dataMax + pad];
+    };
 
     const u = new uPlot({
       width: body.clientWidth,
@@ -1192,7 +1201,7 @@ function makeTransferWindow(title, axis, t1, t2, sessions, leftPx, topPx) {
         // this uPlot defaults to a time scale and labels them like clock
         // times (1am, 1:15am, 1:30am).
         x: { time: false, range: () => [xMin, xMax] },
-        y: { range: () => yRange },
+        y: { range: yAutoRange },
       },
       axes: [
         { stroke:'#888', grid:{stroke:'#2a2a2a'}, font:'11px JetBrains Mono', label: xLabel },
@@ -1311,7 +1320,7 @@ function downloadBlob(blob, filename) {
 // ============================================================
 // INIT
 // ============================================================
-const APP_BUILD = 'v19-cw-toggle-time-fix';
+const APP_BUILD = 'v20-transfer-y-autoscale';
 window.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   syncSettingsInputs();
