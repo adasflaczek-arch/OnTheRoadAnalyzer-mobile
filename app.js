@@ -18,7 +18,8 @@ const state = {
   range: null,           // {t1, t2} after selection
   nextId: 1,
   alignSession: null,    // session id being aligned, or null
-  lastCursorX: null,     // last cursor X value (data coords)
+  alignRefT:    null,    // first-tap reference time during 2-tap align
+  lastCursorX:  null,    // last cursor X value (data coords)
   settings: {
     tpsTol:     0.5,     // ±% TPS bin tolerance
     rpmTol:     50,      // ±rpm bin tolerance
@@ -149,8 +150,10 @@ elBtnImport.addEventListener('click', async () => {
     try {
       handles = await window.showOpenFilePicker({
         multiple: true,
-        excludeAcceptAllOption: false,
-        types: [{ description: 'CSV log files', accept: { 'text/csv': ['.csv'], 'text/plain': ['.csv'] } }],
+        excludeAcceptAllOption: true,
+        // No `types` filter — different Android builds report .csv as
+        // text/csv, text/plain, application/vnd.ms-excel, or octet-stream,
+        // and a strict filter grays out the file. Show all files instead.
       });
     } catch(e) {
       if (e.name === 'AbortError') return; // user cancelled
@@ -531,6 +534,10 @@ function attachPinchZoom() {
         };
         e.preventDefault();
       } else if (e.touches.length === 1) {
+        // double-tap to reset zoom — skip during align/range-select so the
+        // two consecutive taps that those flows need don't trigger a reset.
+        if (state.alignSession !== null) { lastTapT = 0; return; }
+        if (state.rangeSelect && state.rangeSelect.active) { lastTapT = 0; return; }
         const now = Date.now();
         if (now - lastTapT < 350) { resetXZoom(); lastTapT = 0; }
         else { lastTapT = now; }
@@ -744,20 +751,28 @@ elSessionList.addEventListener('click', (e) => {
     if (state.alignSession === s.id) {
       // Cancel
       state.alignSession = null;
+      state.alignRefT    = null;
       setStatus('READY');
       rebuildSidebar();
     } else {
       state.alignSession = s.id;
-      setStatus('ALIGN — tap a reference point on any plot', 'warn');
+      state.alignRefT    = null;
+      setStatus('ALIGN — tap REFERENCE point on the session to align TO (not this one)', 'warn');
       rebuildSidebar();
     }
   }
 });
 
 // ============================================================
-// ALIGN TO CURSOR — tap/click on a plot to pin that time to t=0.
-// Works on both desktop (click) and mobile (touch) without needing a
-// prior hover, by reading the pointer position directly off the event.
+// ALIGN — two-tap matching the Python tool.
+//   1. User presses ALIGN button on the session they want to shift.
+//      (state.alignSession = id, state.alignRefT = null)
+//   2. User taps reference point in any plot of any session.
+//      → state.alignRefT = tapped time
+//   3. User taps the matching point on the same data trace in the
+//      session being shifted.
+//      → offset += (alignRefT - tappedTime), so the matching point
+//        slides to where the reference was.
 // ============================================================
 function pickXFromEvent(plotInstance, ev) {
   if (!plotInstance) return null;
@@ -777,6 +792,25 @@ function pickXFromEvent(plotInstance, ev) {
   return Number.isFinite(val) ? val : null;
 }
 
+function applyAlignTap(xv) {
+  // Stage 1: store reference time
+  if (state.alignRefT === null) {
+    state.alignRefT = xv;
+    setStatus(`ALIGN — ref t=${xv.toFixed(2)}s, now tap matching point in session being shifted`, 'warn');
+    return;
+  }
+  // Stage 2: compute shift and apply to the session whose ALIGN was pressed
+  const s = state.sessions.find(x => x.id === state.alignSession);
+  if (!s) { state.alignSession = null; state.alignRefT = null; setStatus('READY'); return; }
+  const shift = state.alignRefT - xv;
+  s.offset = (s.offset || 0) + shift;
+  saveSessionState(s);
+  state.alignSession = null;
+  state.alignRefT = null;
+  setStatus(`ALIGNED ${s.name} by ${shift >= 0 ? '+' : ''}${shift.toFixed(3)}s`);
+  rebuildAll();
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   const plotsEl = document.getElementById('plots');
   if (plotsEl) {
@@ -794,38 +828,95 @@ window.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById(id);
     if (!el) return;
 
+    let dragSelStartX = null;        // CSS px relative to canvas, when range-select drag is active
+    let dragSelStartCanvasRect = null;
+    let dragSelPlot = null;          // the uPlot whose drag is active
+
     el.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) {
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
         touchMoved  = false;
         touchStartT = Date.now();
-      } else { touchMoved = true; }
-    }, { passive: true });
+
+        // If range-select mode is active, capture this finger as a drag.
+        if (state.rangeSelect && state.rangeSelect.active) {
+          const u = plotMap[id]();
+          if (u) {
+            const canvas = u.root && u.root.querySelector('canvas');
+            if (canvas) {
+              const rect = canvas.getBoundingClientRect();
+              const dpr  = window.devicePixelRatio || 1;
+              const axisLeftCss  = u.bbox.left  / dpr;
+              const plotTopCss   = u.bbox.top   / dpr;
+              const plotHeightCss= u.bbox.height/ dpr;
+              dragSelPlot = u;
+              dragSelStartCanvasRect = { rect, axisLeftCss, plotTopCss, plotHeightCss };
+              dragSelStartX = e.touches[0].clientX - rect.left - axisLeftCss;
+              if (dragSelStartX < 0) dragSelStartX = 0;
+              try { u.setSelect({ left: dragSelStartX, top: plotTopCss, width: 0, height: plotHeightCss }, false); } catch (_e) {}
+              e.preventDefault();
+            }
+          }
+        }
+      } else { touchMoved = true; dragSelStartX = null; }
+    }, { passive: false });
 
     el.addEventListener('touchmove', (e) => {
-      if (e.touches.length >= 2) { touchMoved = true; return; }
+      if (e.touches.length >= 2) { touchMoved = true; dragSelStartX = null; return; }
       if (e.touches.length === 1) {
         const dx = Math.abs(e.touches[0].clientX - touchStartX);
         const dy = Math.abs(e.touches[0].clientY - touchStartY);
         if (dx > 8 || dy > 8) touchMoved = true;
+
+        // Range-select drag in progress — update highlight rect
+        if (dragSelStartX !== null && dragSelPlot && dragSelStartCanvasRect) {
+          const { rect, axisLeftCss, plotTopCss, plotHeightCss } = dragSelStartCanvasRect;
+          let curX = e.touches[0].clientX - rect.left - axisLeftCss;
+          if (curX < 0) curX = 0;
+          const left  = Math.min(dragSelStartX, curX);
+          const width = Math.abs(curX - dragSelStartX);
+          try { dragSelPlot.setSelect({ left, top: plotTopCss, width, height: plotHeightCss }, false); } catch (_e) {}
+          e.preventDefault();
+        }
       }
-    }, { passive: true });
+    }, { passive: false });
 
     el.addEventListener('touchend', (e) => {
+      // ---- Range-select touch drag commit ----
+      if (dragSelStartX !== null && dragSelPlot && dragSelStartCanvasRect) {
+        try {
+          const sel = dragSelPlot.select;
+          if (sel && sel.width > 4) {
+            const t1 = dragSelPlot.posToVal(sel.left, 'x');
+            const t2 = dragSelPlot.posToVal(sel.left + sel.width, 'x');
+            if (Number.isFinite(t1) && Number.isFinite(t2) && t1 !== t2) {
+              state.range = { t1: Math.min(t1, t2), t2: Math.max(t1, t2) };
+              cancelRangeSelect();
+              try { dragSelPlot.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false); } catch (_e) {}
+              drawRangeMarkers();
+              openTransferWindows();
+            } else {
+              try { dragSelPlot.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false); } catch (_e) {}
+            }
+          } else {
+            try { dragSelPlot.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false); } catch (_e) {}
+          }
+        } catch (_e) {}
+        dragSelStartX = null;
+        dragSelPlot = null;
+        dragSelStartCanvasRect = null;
+        return;
+      }
+
+      // ---- Alignment tap ----
       if (touchMoved) return;
       if (Date.now() - touchStartT > 600) return;
       if (state.alignSession === null) return;
       const u = plotMap[id]();
       const xv = pickXFromEvent(u, e);
       if (xv === null) return;
-      const s = state.sessions.find(x => x.id === state.alignSession);
-      if (!s) { state.alignSession = null; return; }
-      s.offset = s.offset - xv;
-      state.alignSession = null;
-      setStatus('READY');
-      saveSessionState(s);
-      rebuildAll();
+      applyAlignTap(xv);
       e.preventDefault();
     });
 
@@ -835,13 +926,7 @@ window.addEventListener('DOMContentLoaded', () => {
       const xv = pickXFromEvent(u, e);
       const useX = xv !== null ? xv : state.lastCursorX;
       if (useX === null) return;
-      const s = state.sessions.find(x => x.id === state.alignSession);
-      if (!s) { state.alignSession = null; return; }
-      s.offset = s.offset - useX;
-      state.alignSession = null;
-      setStatus('READY');
-      saveSessionState(s);
-      rebuildAll();
+      applyAlignTap(useX);
     });
   });
 });
@@ -882,13 +967,27 @@ elCalModal.addEventListener('click', (e) => { if (e.target === elCalModal) close
 
 elCalApply.addEventListener('click', () => {
   const s = state.sessions.find(x => x.id === calSessionId);
-  if (!s) return;
-  s.tpsCal.closed = parseFloat(elCalClosed.value) || 0;
-  s.tpsCal.wot    = parseFloat(elCalWot.value)    || 90;
-  s.offset        = parseFloat(elCalOffset.value) || 0;
+  if (!s) { closeCalModal(); return; }
+  // Replace tpsCal with a fresh object so any held references compare unequal
+  // (also makes saveSessionState always serialise the new values).
+  const newClosed = parseFloat(elCalClosed.value);
+  const newWot    = parseFloat(elCalWot.value);
+  const newOff    = parseFloat(elCalOffset.value);
+  s.tpsCal = {
+    closed: Number.isFinite(newClosed) ? newClosed : 0,
+    wot:    Number.isFinite(newWot)    ? newWot    : 90,
+    ccw:    !!s.tpsCal.ccw,
+  };
+  s.offset = Number.isFinite(newOff) ? newOff : 0;
   saveSessionState(s);
   closeCalModal();
-  rebuildAll();
+  try {
+    rebuildAll();
+    setStatus(`CAL APPLIED — ${s.name}: ${s.tpsCal.closed}° / ${s.tpsCal.wot}°`);
+  } catch (e) {
+    console.error('rebuildAll after CAL apply:', e);
+    setStatus(`ERR: ${e.message}`, 'error');
+  }
 });
 elCalReset.addEventListener('click', () => {
   elCalClosed.value = 0; elCalWot.value = 90; elCalOffset.value = 0;
