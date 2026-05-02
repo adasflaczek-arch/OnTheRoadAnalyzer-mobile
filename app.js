@@ -141,7 +141,17 @@ async function importFiles(files) {
     setStatus(`ERR: ${e.message}`, 'error');
     return;
   }
-  setStatus(loaded ? `READY` : 'NO DATA', loaded ? 'ok' : 'warn');
+  // Show per-session cal state in status so we can immediately see why
+  // a TPS plot is in % vs degrees.
+  if (loaded) {
+    const tail = state.sessions.slice(-loaded).map(s => {
+      if (!s.tpsCal) return `${s.name}=DEG`;
+      return `${s.name}=${s.tpsCal.closed}/${s.tpsCal.wot}`;
+    }).join(' ');
+    setStatus(`READY · ${tail}`);
+  } else {
+    setStatus('NO DATA', 'warn');
+  }
 }
 
 elBtnImport.addEventListener('click', async () => {
@@ -1331,7 +1341,7 @@ function downloadBlob(blob, filename) {
 // ============================================================
 // INIT
 // ============================================================
-const APP_BUILD = 'v13-tps-degrees-default';
+const APP_BUILD = 'v14-wipe-cals-button';
 window.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   syncSettingsInputs();
@@ -1342,4 +1352,30 @@ window.addEventListener('DOMContentLoaded', () => {
   const sub = document.querySelector('.brand-sub');
   if (sub) sub.textContent = 'ANALYZER \u00b7 ' + APP_BUILD.toUpperCase();
   console.log('OTR Analyzer build:', APP_BUILD);
+
+  // Inject a "WIPE SAVED CALS" button into the settings panel — one-tap
+  // way to clear all stored per-file calibrations from localStorage so the
+  // app falls back to raw degrees on next import.
+  const sp = $('settingsPanel');
+  if (sp) {
+    const wipeBtn = document.createElement('button');
+    wipeBtn.className = 'btn btn-danger';
+    wipeBtn.textContent = 'WIPE SAVED CALS';
+    wipeBtn.title = 'Clear all per-file TPS calibrations + offsets from localStorage';
+    wipeBtn.style.marginLeft = 'auto';
+    wipeBtn.addEventListener('click', () => {
+      if (!confirm('Wipe all saved TPS calibrations and offsets from this device?')) return;
+      try { localStorage.removeItem('otr-sessions'); } catch (_e) {}
+      // Also clear any in-memory cals on currently-loaded sessions so the
+      // user sees the plot revert immediately.
+      for (const s of state.sessions) { s.tpsCal = null; s.offset = 0; }
+      try { if (plotAfr) plotAfr.destroy(); } catch (_e) {}
+      try { if (plotRpm) plotRpm.destroy(); } catch (_e) {}
+      try { if (plotTps) plotTps.destroy(); } catch (_e) {}
+      plotAfr = plotRpm = plotTps = null;
+      rebuildAll();
+      setStatus('CALS WIPED — TPS now in raw degrees');
+    });
+    sp.appendChild(wipeBtn);
+  }
 });
