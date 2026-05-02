@@ -972,11 +972,24 @@ elCalModal.addEventListener('click', (e) => { if (e.target === elCalModal) close
 elCalApply.addEventListener('click', () => {
   const s = state.sessions.find(x => x.id === calSessionId);
   if (!s) { closeCalModal(); return; }
-  // Replace tpsCal with a fresh object so any held references compare unequal
-  // (also makes saveSessionState always serialise the new values).
+
+  // ---- read inputs ----
   const newClosed = parseFloat(elCalClosed.value);
   const newWot    = parseFloat(elCalWot.value);
   const newOff    = parseFloat(elCalOffset.value);
+
+  // ---- compute peak TPS % BEFORE applying, for diagnostic flash ----
+  let peakRaw = -Infinity;
+  for (let i=0; i<s.tpsRaw.length; i++) {
+    const v = s.tpsRaw[i];
+    if (Number.isFinite(v) && v > peakRaw) peakRaw = v;
+  }
+  const oldCal = { ...s.tpsCal };
+  const oldPct = Number.isFinite(peakRaw)
+    ? calibrateTps(peakRaw, oldCal.closed, oldCal.wot, oldCal.ccw)
+    : NaN;
+
+  // ---- replace tpsCal with a fresh object ----
   s.tpsCal = {
     closed: Number.isFinite(newClosed) ? newClosed : 0,
     wot:    Number.isFinite(newWot)    ? newWot    : 90,
@@ -985,9 +998,20 @@ elCalApply.addEventListener('click', () => {
   s.offset = Number.isFinite(newOff) ? newOff : 0;
   saveSessionState(s);
   closeCalModal();
+
+  // ---- force a totally fresh canvas — destroy & null out before rebuild ----
+  try { if (plotAfr) plotAfr.destroy(); } catch (_e) {}
+  try { if (plotRpm) plotRpm.destroy(); } catch (_e) {}
+  try { if (plotTps) plotTps.destroy(); } catch (_e) {}
+  plotAfr = plotRpm = plotTps = null;
+
   try {
     rebuildAll();
-    setStatus(`CAL APPLIED — ${s.name}: ${s.tpsCal.closed}° / ${s.tpsCal.wot}°`);
+    const newPct = Number.isFinite(peakRaw)
+      ? calibrateTps(peakRaw, s.tpsCal.closed, s.tpsCal.wot, s.tpsCal.ccw)
+      : NaN;
+    const fmt = v => Number.isFinite(v) ? v.toFixed(1)+'%' : '—';
+    setStatus(`CAL ${oldCal.closed}/${oldCal.wot} → ${s.tpsCal.closed}/${s.tpsCal.wot}  peak ${fmt(oldPct)}→${fmt(newPct)}`);
   } catch (e) {
     console.error('rebuildAll after CAL apply:', e);
     setStatus(`ERR: ${e.message}`, 'error');
