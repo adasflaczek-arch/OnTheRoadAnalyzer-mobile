@@ -473,8 +473,10 @@ function buildPlots() {
   const tpsFmt   = anyCal ? (v => v.toFixed(0)+'%') : (v => v.toFixed(0)+'\u00b0');
   plotTps = makePlot(tpsEl, tpsRange, tpsFmt);
 
-  // Update the TPS plot label
-  const tpsLabel = document.querySelector('.plot-card:nth-child(3) .plot-label');
+  // Update the TPS plot label (target the real TPS card, not the 3rd
+  // child of .plots — that one is RPM because cursorLine is child 1).
+  const tpsCard = $('plotTps') ? $('plotTps').parentElement : null;
+  const tpsLabel = tpsCard ? tpsCard.querySelector('.plot-label') : null;
   if (tpsLabel) tpsLabel.textContent = anyCal ? 'TPS %' : 'TPS\u00b0';
 
   window.removeEventListener('resize', resizePlots);
@@ -1329,9 +1331,15 @@ function downloadBlob(blob, filename) {
 // ============================================================
 // INIT
 // ============================================================
+const APP_BUILD = 'v13-tps-degrees-default';
 window.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   syncSettingsInputs();
   buildPlots();
   setStatus('READY');
+  // Stamp the build marker into the brand sub-text so we can confirm at
+  // a glance which version of app.js is actually loaded.
+  const sub = document.querySelector('.brand-sub');
+  if (sub) sub.textContent = 'ANALYZER \u00b7 ' + APP_BUILD.toUpperCase();
+  console.log('OTR Analyzer build:', APP_BUILD);
 });
