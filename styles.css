@@ -47,6 +47,10 @@ html, body {
   user-select: none;
   -webkit-font-smoothing: antialiased;
 }
+body {
+  display: flex;
+  flex-direction: column;
+}
 
 /* subtle scanline + grain backdrop */
 body::before {
@@ -215,7 +219,8 @@ input  { font-family: inherit; }
   z-index: 2;
   display: grid;
   grid-template-columns: 280px 1fr;
-  height: calc(100vh - 56px);
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* ============================================================
@@ -408,6 +413,9 @@ input  { font-family: inherit; }
 .plot {
   flex: 1;
   min-height: 0;
+  /* Mobile: capture all touch gestures so pinch zooms the X-axis (handled in JS),
+     not the page. */
+  touch-action: none;
 }
 
 /* uPlot overrides */
@@ -707,4 +715,44 @@ input  { font-family: inherit; }
 @media (max-width: 900px) {
   .layout { grid-template-columns: 220px 1fr; }
   .brand-title { font-size: 18px; }
+}
+
+/* ============================================================
+   MOBILE — phone-sized portrait
+   ============================================================ */
+@media (max-width: 640px) {
+  .topbar {
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding: 8px 10px;
+  }
+  .brand { padding-right: 8px; }
+  .brand-title  { font-size: 15px; letter-spacing: 1px; }
+  .brand-sub    { font-size: 8px; letter-spacing: 2px; }
+  .toolbar      { grid-column: 1 / -1; gap: 6px; }
+  .btn          { padding: 8px 10px; font-size: 10px; letter-spacing: 0.8px; }
+  .seg-btn      { padding: 8px 10px; }
+  .status       { font-size: 9px; padding: 4px 8px; min-width: 60px; }
+
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .sidebar {
+    max-height: 180px;
+    border-right: none;
+    border-bottom: 1px solid var(--line-strong);
+  }
+
+  /* Floating transfer windows — full-width sheet at the bottom on phones */
+  .transfer-window {
+    left: 4px !important;
+    right: 4px !important;
+    top: auto !important;
+    bottom: 4px;
+    width: auto !important;
+    height: 50vh;
+  }
 }
