@@ -150,14 +150,18 @@ elBtnImport.addEventListener('click', async () => {
     try {
       handles = await window.showOpenFilePicker({
         multiple: true,
-        excludeAcceptAllOption: true,
+        excludeAcceptAllOption: false,    // keep the "All files" entry
         // No `types` filter — different Android builds report .csv as
         // text/csv, text/plain, application/vnd.ms-excel, or octet-stream,
         // and a strict filter grays out the file. Show all files instead.
       });
     } catch(e) {
       if (e.name === 'AbortError') return; // user cancelled
-      setStatus(`PICKER ERR: ${e.message}`, 'error');
+      // Any other error (TypeError "Need at least one accepted type",
+      // SecurityError, NotAllowedError, etc.) → quietly fall back to the
+      // legacy <input type="file"> chooser so the user still gets a picker.
+      console.warn('showOpenFilePicker failed, falling back:', e);
+      elFileInput.click();
       return;
     }
     let files;
